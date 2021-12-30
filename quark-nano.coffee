@@ -7,8 +7,8 @@ BOARD_POWERON  = 'Power on the board.'
 
 module.exports =
 	version: 1
-	slug: 'quark-nano'
-	aliases: [ 'quark-nano' ]
+	slug: 'photon-nano'
+	aliases: [ 'photon-nano' ]
 	name: 'CTI Quark Nano'
 	arch: 'aarch64'
 	state: 'released'
