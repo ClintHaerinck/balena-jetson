@@ -286,7 +286,40 @@ BALENA_CONFIGS[backlight] = " \
     CONFIG_BACKLIGHT_CLASS_DEVICE=m \
 "
 
-BALENA_CONFIGS:append:quark-nano = " mbim qmi usb-serial"
+BALENA_CONFIGS:append:quark-nano = " mbim"
+BALENA_CONFIGS[mbim] = " \
+    CONFIG_USB_NET_CDC_MBIM=m \
+"
+
+BALENA_CONFIGS_DEPS[mbim] = " \
+    CONFIG_USB_NET_DRIVERS=m \
+    CONFIG_USB_USBNET=m \
+"
+
+BALENA_CONFIGS:append:quark-nano = " qmi"
+BALENA_CONFIGS[qmi] = " \
+    CONFIG_USB_NET_QMI_WWAN=m \
+"
+
+BALENA_CONFIGS_DEPS[qmi] = " \
+    CONFIG_USB_NET_DRIVERS=m \
+    CONFIG_USB_USBNET=m \
+"
+
+BALENA_CONFIGS:append:quark-nano = " usb-serial"
+BALENA_CONFIGS[usb-serial] = " \
+    CONFIG_USB_SERIAL=y \
+    CONFIG_USB_SERIAL_GENERIC=y \
+    CONFIG_USB_SERIAL_OPTION=m \
+    CONFIG_USB_SERIAL_QUALCOMM=m \
+    CONFIG_USB_SERIAL_CH341=m \
+    CONFIG_USB_SERIAL_FTDI_SIO=m \
+    CONFIG_USB_SERIAL_PL2303=m \
+"
+
+BALENA_CONFIGS_DEPS[usb-serial] = " \
+    CONFIG_USB_SERIAL_WWAN=m \
+"
 
 L4TVER=" l4tver=${L4T_VERSION}"
 KERNEL_ROOTSPEC:jetson-nano = "\${resin_kernel_root} ro rootwait"
