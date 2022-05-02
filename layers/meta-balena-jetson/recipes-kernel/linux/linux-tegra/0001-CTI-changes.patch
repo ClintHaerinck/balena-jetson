@@ -1,0 +1,3826 @@
+From 815a25b9df26432ea404cfe96416be06313f56dd Mon Sep 17 00:00:00 2001
+From: Clint Haerinck <clint.haerinck@citymesh.com>
+Date: Mon, 2 May 2022 19:06:42 +0200
+Subject: [PATCH] CTI changes
+
+---
+ drivers/gpio/gpio-pca953x.c                   |    3 +-
+ drivers/leds/leds-pca9532.c                   |    1 +
+ drivers/net/phy/micrel.c                      |   13 +-
+ drivers/net/usb/cdc_mbim.c                    |    5 +
+ drivers/pci/host/pci-tegra.c                  |   14 +-
+ drivers/regulator/Kconfig                     |    7 +
+ drivers/regulator/ptn5150-regulator.c         |  411 ++++
+ drivers/usb/serial/option.c                   |    4 +
+ drivers/usb/serial/usb_wwan.c                 |   12 +-
+ net/wireless/db.txt                           | 1707 ++++++++++++++++-
+ nvidia/drivers/media/i2c/imx477.c             |   38 +-
+ .../platform/tegra/camera/camera_common.c     |   40 +
+ .../platform/tegra/camera/capture_common.c    |    3 +
+ .../platform/tegra/camera/sensor_common.c     |   15 +
+ .../platform/tegra/camera/tegracam_ctrls.c    |  360 +++-
+ .../platform/tegra/camera/tegracam_v4l2.c     |   42 +
+ .../media/platform/tegra/camera/vi/capture.c  |   21 +-
+ .../media/platform/tegra/camera/vi/vi2_fops.c |   95 +-
+ .../media/platform/tegra/camera/vi/vi4_fops.c |   16 +-
+ .../platform/tegra/camera/vi/vi4_formats.h    |    6 +
+ .../media/platform/tegra/camera/vi/vi5_fops.c |   51 +-
+ .../platform/tegra/camera/vi/vi5_formats.h    |   10 +-
+ .../net/ethernet/nvidia/pcie/tegra_vnet.c     |    1 +
+ .../endpoint/functions/pci-epf-tegra-vnet.c   |    1 +
+ nvidia/include/media/camera_common.h          |   46 +
+ nvidia/include/media/tegra-v4l2-camera.h      |   36 +
+ nvidia/include/media/tegra_camera_core.h      |    1 +
+ .../tegra_machine_driver_mobile.c             |   18 +
+ 29 files changed, 2906 insertions(+), 88 deletions(-)
+ create mode 100644 drivers/regulator/ptn5150-regulator.c
+
+diff --git a/drivers/gpio/gpio-pca953x.c b/drivers/gpio/gpio-pca953x.c
+index 5a24113d17cf..ffa8c7cff1f2 100644
+--- a/drivers/gpio/gpio-pca953x.c
++++ b/drivers/gpio/gpio-pca953x.c
+@@ -997,12 +997,13 @@ static int __init pca953x_init(void)
+ /* register after i2c postcore initcall and before
+  * subsys initcalls that may rely on these GPIOs
+  */
+-subsys_initcall(pca953x_init);
++//subsys_initcall(pca953x_init);
+ 
+ static void __exit pca953x_exit(void)
+ {
+ 	i2c_del_driver(&pca953x_driver);
+ }
++fs_initcall_sync(pca953x_init);
+ module_exit(pca953x_exit);
+ 
+ MODULE_AUTHOR("eric miao <eric.miao@marvell.com>");
+diff --git a/drivers/leds/leds-pca9532.c b/drivers/leds/leds-pca9532.c
+index 896b38f6f9c0..37922da5df83 100644
+--- a/drivers/leds/leds-pca9532.c
++++ b/drivers/leds/leds-pca9532.c
+@@ -468,6 +468,7 @@ pca9532_of_populate_pdata(struct device *dev, struct device_node *np)
+ 	if (!pdata)
+ 		return ERR_PTR(-ENOMEM);
+ 
++	of_property_read_s32(np, "gpio-base", &pdata->gpio_base);
+ 	for_each_child_of_node(np, child) {
+ 		if (of_property_read_string(child, "label",
+ 					    &pdata->leds[i].name))
+diff --git a/drivers/net/phy/micrel.c b/drivers/net/phy/micrel.c
+index 1704d9e2ca8d..2f2c3cb52e25 100644
+--- a/drivers/net/phy/micrel.c
++++ b/drivers/net/phy/micrel.c
+@@ -28,7 +28,6 @@
+ #include <linux/micrel_phy.h>
+ #include <linux/of.h>
+ #include <linux/clk.h>
+-#include <linux/delay.h>
+ 
+ /* Operation Mode Strap Override */
+ #define MII_KSZPHY_OMSO				0x16
+@@ -677,8 +676,8 @@ static void kszphy_get_strings(struct phy_device *phydev, u8 *data)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(kszphy_hw_stats); i++) {
+-		strlcpy(data + i * ETH_GSTRING_LEN,
+-			kszphy_hw_stats[i].string, ETH_GSTRING_LEN);
++		strlcpy(data + i * ETH_GSTRING_LEN,
++		       kszphy_hw_stats[i].string, ETH_GSTRING_LEN);
+ 	}
+ }
+ 
+@@ -729,12 +728,6 @@ static int kszphy_resume(struct phy_device *phydev)
+ {
+ 	genphy_resume(phydev);
+ 
+-	/* After switching from power-down to normal mode, an internal global
+-	 * reset is automatically generated. Wait a minimum of 1 ms before
+-	 * read/write access to the PHY registers.
+-	 */
+-	usleep_range(1000, 2000);
+-
+ 	/* Enable PHY Interrupts */
+ 	if (phy_interrupt_is_valid(phydev)) {
+ 		phydev->interrupts = PHY_INTERRUPT_ENABLED;
+@@ -989,7 +982,7 @@ static struct phy_driver ksphy_driver[] = {
+ 	.phy_id		= PHY_ID_KSZ9031,
+ 	.phy_id_mask	= MICREL_PHY_ID_MASK,
+ 	.name		= "Micrel KSZ9031 Gigabit PHY",
+-	.features	= (PHY_GBIT_FEATURES | SUPPORTED_Pause),
++	.features	= (PHY_GBIT_FEATURES),
+ 	.flags		= PHY_HAS_MAGICANEG | PHY_HAS_INTERRUPT,
+ 	.driver_data	= &ksz9021_type,
+ 	.probe		= kszphy_probe,
+diff --git a/drivers/net/usb/cdc_mbim.c b/drivers/net/usb/cdc_mbim.c
+index 79904cecc725..602691db7c0d 100644
+--- a/drivers/net/usb/cdc_mbim.c
++++ b/drivers/net/usb/cdc_mbim.c
+@@ -637,6 +637,11 @@ static const struct usb_device_id mbim_devs[] = {
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(0x03F0, 0x4e1d, USB_CLASS_COMM, USB_CDC_SUBCLASS_MBIM, USB_CDC_PROTO_NONE),
+ 	  .driver_info = (unsigned long)&cdc_mbim_info,
+ 	},
++    
++    /* 0x03F0, 0x4e1d */
++	{ USB_DEVICE_AND_INTERFACE_INFO(0x03F0, 0x4e1d, USB_CLASS_COMM, USB_CDC_SUBCLASS_MBIM, USB_CDC_PROTO_NONE),
++	  .driver_info = (unsigned long)&cdc_mbim_info,
++	},
+ 
+ 	/* Some Huawei devices, ME906s-158 (12d1:15c1) and E3372
+ 	 * (12d1:157d), are known to fail unless the NDP is placed
+diff --git a/drivers/pci/host/pci-tegra.c b/drivers/pci/host/pci-tegra.c
+index 60958d5ff943..fa15693e2cb6 100644
+--- a/drivers/pci/host/pci-tegra.c
++++ b/drivers/pci/host/pci-tegra.c
+@@ -2828,7 +2828,8 @@ static int tegra_pcie_init(struct tegra_pcie *pcie)
+ 	if (!pcie->num_ports) {
+ 		dev_info(pcie->dev, "PCIE: no end points detected\n");
+ 		err = -ENODEV;
+-		goto fail_power_off;
++		return err; //do not turn off
++		//goto fail_power_off;
+ 	}
+ 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
+ 		err = tegra_pcie_enable_msi(pcie, false);
+@@ -4682,18 +4683,18 @@ static void pcie_delayed_detect(struct work_struct *work)
+ 	}
+ #endif
+ 	ret = tegra_pcie_probe_complete(pcie);
+-	if (ret || !pcie->num_ports) {
++	/*if (ret || !pcie->num_ports) {
+ 		pm_runtime_put_sync(pcie->dev);
+ 		goto release_regulators;
+-	}
++	}*/
+ 	return;
+ 
+-release_regulators:
++/*release_regulators:
+ 	devm_kfree(pcie->dev, pcie->pcie_regulators);
+ 	devm_kfree(pcie->dev, pcie->plat_data);
+ 	pci_free_host_bridge(pcie->host);
+ 	platform_set_drvdata(pdev, NULL);
+-	return;
++	return;*/
+ }
+ 
+ #ifdef CONFIG_THERMAL
+@@ -5183,6 +5184,7 @@ static void __exit tegra_pcie_exit_driver(void)
+ 	platform_driver_unregister(&tegra_pcie_driver);
+ }
+ 
+-module_init(tegra_pcie_init_driver);
++//module_init(tegra_pcie_init_driver);
++fs_initcall(tegra_pcie_init_driver);
+ module_exit(tegra_pcie_exit_driver);
+ MODULE_LICENSE("GPL v2");
+diff --git a/drivers/regulator/Kconfig b/drivers/regulator/Kconfig
+index 0a08c5d67d9b..a04fc91e50ef 100644
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+@@ -924,5 +924,12 @@ config REGULATOR_WM8994
+ 	  This driver provides support for the voltage regulators on the
+ 	  WM8994 CODEC.
+ 
++
++config REGULATOR_PTN5150
++	bool "NXP PTN5150 USB-C Power Regulator Driver"
++	depends on I2C
++	select REGMAP_I2C
++    help
++      Regulator driver support for the NXP PTN5150 
+ endif
+ 
+diff --git a/drivers/regulator/ptn5150-regulator.c b/drivers/regulator/ptn5150-regulator.c
+new file mode 100644
+index 000000000000..02dcc17196a0
+--- /dev/null
++++ b/drivers/regulator/ptn5150-regulator.c
+@@ -0,0 +1,411 @@
++	/*
++ * ptn5150-regulator.c - NXP PTN5150 USB-C Regulator Driver
++ *
++ * Copyright (c) 2021, Connect Tech Inc. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++//#define DEBUG
++
++#include <linux/module.h>
++#include <linux/i2c.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++#include <linux/types.h>
++#include <linux/regulator/driver.h>
++#include <linux/regulator/fixed.h>
++#include <linux/gpio.h>
++#include <linux/regulator/of_regulator.h>
++#include <linux/regulator/machine.h>
++#include <linux/regmap.h>
++
++//Registers
++#define PTN5150_ID_REG          0x01
++#define PTN5150_CTRL_REG        0x02
++#define PTN5150_CABLE_INT_REG   0x03
++#define PTN5150_CC_STATUS_REG   0x04
++#define PTN5150_CON_DET_REG     0x09
++#define PTN5150_RESET_REG       0x10
++#define PTN5150_INT_MASK_REG    0x18
++#define PTN5150_INT_STAT_REG    0x19
++
++#define PTN5150_LIMIT_900MA     900000
++#define PTN5150_LIMIT_1500MA    1500000
++#define PTN5150_LIMIT_3000MA    3000000
++
++struct ptn5150
++{
++    u8 addr;                        //I2C address
++    struct i2c_client* client;
++    struct regmap* regmap;
++    struct device* dev;
++
++    u32 default_limit_uA;
++    bool optional;                  //When optional is true, do no error if not found
++
++    struct regulator_desc desc;
++    struct regulator_dev* reg_dev;
++};
++
++static const struct regmap_config ptn5150_regmap_config = {
++    .reg_bits = 8,
++    .val_bits = 8,
++    .cache_type = REGCACHE_RBTREE, 
++};
++
++static int ptn5150_write_reg(struct ptn5150* ptn5150, u8 reg, u8 val)
++{
++    if(!ptn5150 || !ptn5150->regmap){
++        return -EINVAL;
++    }
++
++    dev_dbg(ptn5150->dev, "Write REG: 0x%02X, VAL 0x%02X\n", reg, val);
++
++    return regmap_write(ptn5150->regmap, reg, (u32)val);
++}
++
++static int ptn5150_read_reg(struct ptn5150* ptn5150, u8 reg, u8* val)
++{
++    int ret;
++    u32 reg_value;
++
++    if(!ptn5150 || !ptn5150->regmap || !val){
++        return -EINVAL;
++    }
++
++    ret = regmap_read(ptn5150->regmap, reg, &reg_value);
++
++    if(ret != 0){
++        return ret;
++    }
++
++    *val = reg_value & 0xFF;
++
++    dev_dbg(ptn5150->dev, "Read REG: 0x%02X, VAL 0x%02X\n", reg, *val);
++    
++    return 0;
++}
++
++static int ptn5150_write_cur_limit(struct ptn5150* ptn5150, u32 limit)
++{
++    u8 value;   //register value
++
++    if(!ptn5150){
++        return -EINVAL;
++    }
++    
++    if(ptn5150_read_reg(ptn5150, PTN5150_CTRL_REG, &value) != 0){
++        return -EIO;
++    } 
++
++    /*
++        bits 3 and 4 are used for current limit. Clear them first to 
++        get them to a known state before setting the desired bits
++    */
++    value &= ~(0x3 << 3);    
++
++    switch(limit){
++        case PTN5150_LIMIT_900MA:   //00
++        break;   
++        case PTN5150_LIMIT_1500MA:  //01
++            value |= BIT(3);
++        break;
++        case PTN5150_LIMIT_3000MA:  //10
++            value |= BIT(4);
++        break;
++        default:
++            dev_err(ptn5150->dev, "Invalid Current Limit %u\n", limit);
++        return -EINVAL;
++    }
++
++    if(ptn5150_write_reg(ptn5150, PTN5150_CTRL_REG, value) != 0){
++        return -EIO;
++    } 
++
++    return 0;
++}
++
++static int ptn5150_set_current_limit(struct regulator_dev* reg_dev,
++                                     int min_uA, int max_uA)
++{
++    struct ptn5150* ptn5150;
++
++    (void)min_uA;
++
++    if(!reg_dev){
++        return -EINVAL;
++    }
++
++    ptn5150 = rdev_get_drvdata(reg_dev);
++
++    if(!ptn5150){
++        return -EINVAL;
++    }
++
++    return ptn5150_write_cur_limit(ptn5150, (u32)max_uA);
++}
++
++//Read the Current Limit from the device
++static int ptn5150_read_cur_limit(struct ptn5150* ptn5150, u32* limit)
++{
++    u8 value;   //register value
++
++    if(!ptn5150 || !limit){
++        return -EINVAL;
++    }
++    
++    if(ptn5150_read_reg(ptn5150, PTN5150_CTRL_REG, &value) != 0){
++        return -EIO;
++    } 
++
++    //bits 3 and 4 are used for current limit.
++    value &= (0x3 << 3);    
++
++    value >>= 3;
++
++    switch(value){
++        case 0: //00
++            *limit = PTN5150_LIMIT_900MA;
++        break;   
++        case 1: //01
++            *limit = PTN5150_LIMIT_1500MA;
++        break;
++        case 2: //10
++            *limit = PTN5150_LIMIT_3000MA;
++        break;
++        default:
++        return -EFAULT;
++    }
++
++    return 0;
++}
++
++static int ptn5150_get_current_limit(struct regulator_dev* reg_dev)
++{
++    struct ptn5150* ptn5150;
++    u32 limit;    
++    int ret;
++
++    if(!reg_dev){
++        return -EINVAL;
++    }
++
++    ptn5150 = rdev_get_drvdata(reg_dev);
++
++    if(!ptn5150){
++        return -EINVAL;
++    }
++
++    ret = ptn5150_read_cur_limit(ptn5150, &limit);
++    if(ret != 0){
++        return ret;
++    }
++
++    return limit;
++}
++
++
++static int ptn5150_remove(struct i2c_client* client)
++{
++    if(!client){
++        return -EINVAL;
++    }
++
++    return 0;
++}
++
++static int ptn5150_parse_dt(struct ptn5150* ptn5150,
++                            struct device_node* node)
++{
++    u32 value;
++
++    if(of_property_read_u32(node, "regulator-init-microamp", &value) != 0){
++        dev_info(ptn5150->dev, "No regulator-init-microamp in dt node, using default 900mA\n");
++        ptn5150->default_limit_uA = PTN5150_LIMIT_900MA;
++    }
++    else{
++        switch(value){
++            case PTN5150_LIMIT_900MA:   //900mA 
++            case PTN5150_LIMIT_1500MA:  //1.5A 
++            case PTN5150_LIMIT_3000MA:  //3A 
++                ptn5150->default_limit_uA = value;
++                dev_info(ptn5150->dev, "Current Limit %uuA\n", value);
++            break;
++            default:
++                dev_err(ptn5150->dev, "Invalid Current Limit %u\n", value);
++            return -EINVAL;
++        }
++    }
++    
++    /*
++        When "optional" is true the device may or may not be present.
++        This prevents error messages when some revisions of a product
++        use the ptn5150 part and some don't
++    */
++    ptn5150->optional = of_property_read_bool(node, "cti,optional");
++
++    return 0;
++}
++
++//Attempt to read the ID register to see if device is on the bus
++static bool ptn5150_detect(struct ptn5150* ptn5150)
++{
++    u8 value;
++
++    if(!ptn5150){
++        return false;
++    }
++
++    if(ptn5150_read_reg(ptn5150, PTN5150_ID_REG, &value) != 0){
++        return false;
++    }
++
++    return true;
++}
++
++static struct regulator_ops ptn5150_ops = {
++
++    .set_current_limit = ptn5150_set_current_limit,
++    .get_current_limit = ptn5150_get_current_limit,
++
++};
++
++//Register with the regulator subsystem
++int ptn5150_register(struct ptn5150* ptn5150)
++{
++
++    struct regulator_config cfg = {};
++
++    if(!ptn5150 || !ptn5150->dev){
++        return -EINVAL;
++    }
++
++    ptn5150->desc.name = devm_kasprintf(ptn5150->dev, GFP_KERNEL, "%s-%d-0x%02x",
++                                        ptn5150->dev->driver->name,
++                                        i2c_adapter_id(ptn5150->client->adapter),
++                                        ptn5150->addr);
++
++    if(!ptn5150->desc.name) {
++        dev_err(ptn5150->dev, "Failed to allocate supply name\n");
++        return -ENOMEM;
++    }
++
++    ptn5150->desc.type = REGULATOR_CURRENT;
++    ptn5150->desc.owner = THIS_MODULE;
++    ptn5150->desc.ops = &ptn5150_ops;
++    ptn5150->desc.n_voltages = 1;
++    ptn5150->desc.fixed_uV = 5000000;   //5V
++
++    cfg.of_node = ptn5150->dev->of_node;
++    cfg.dev = ptn5150->dev;
++    cfg.driver_data = ptn5150;
++
++    ptn5150->reg_dev = devm_regulator_register(ptn5150->dev, &ptn5150->desc, &cfg);
++
++    if(IS_ERR(ptn5150->reg_dev)) {
++        dev_err(ptn5150->dev, "Failed to register regulator: %ld\n", PTR_ERR(ptn5150->reg_dev));
++        return PTR_ERR(ptn5150->reg_dev);
++    }
++
++    dev_dbg(ptn5150->dev, "Regulator Registered %s\n", ptn5150->desc.name);
++
++    return 0;
++}
++
++static int ptn5150_probe(struct i2c_client* client,
++                         const struct i2c_device_id* id)
++{
++    int ret;
++    struct ptn5150* ptn5150;
++
++    ptn5150 = devm_kzalloc(&client->dev, sizeof(struct ptn5150), GFP_KERNEL);
++
++    if(!ptn5150){
++        return -ENOMEM;
++    }
++
++    ptn5150->client = client;
++    ptn5150->dev = &client->dev;
++    ptn5150->addr = client->addr;
++
++    ret = ptn5150_parse_dt(ptn5150, ptn5150->dev->of_node);
++    if(ret != 0){
++        dev_err(ptn5150->dev, "Failed to Parse DT\n");
++        return ret;
++    }
++
++    ptn5150->regmap = devm_regmap_init_i2c(ptn5150->client, &ptn5150_regmap_config);
++    if(IS_ERR(ptn5150->regmap)) {
++        dev_err(ptn5150->dev, "regmap init failed: %ld\n", PTR_ERR(ptn5150->regmap));
++        return -ENOMEM;
++    }
++
++    if(!ptn5150_detect(ptn5150)){
++        if(!ptn5150->optional){
++            dev_err(ptn5150->dev, "PTN5150 USB PD Controller Not Detected\n");
++            return -EIO;
++        }
++        else{
++            //This is OK because the device was marked as optional
++            dev_dbg(ptn5150->dev, "PTN5150 USB PD Controller Not Detected\n");
++            return 0;
++        }
++    }
++
++    dev_dbg(ptn5150->dev, "PTN5150 USB PD Controller Detected\n");
++
++    //add the private data to the device and I2C client 
++    dev_set_drvdata(ptn5150->dev, ptn5150);
++    i2c_set_clientdata(client, ptn5150);
++
++    //set the default current limit
++    ret = ptn5150_write_cur_limit(ptn5150, ptn5150->default_limit_uA);
++    if(ret != 0){
++        return ret;
++    }
++
++    ret = ptn5150_register(ptn5150);
++
++    return ret;
++}
++
++
++static const struct i2c_device_id ptn5150_id[] = {
++    { "ptn5150", 0 },
++    { },
++};
++MODULE_DEVICE_TABLE(i2c, ptn5150_id);
++
++const struct of_device_id ptn5150_of_match[] = {
++    { .compatible = "nxp,ptn5150", },
++    { },
++};
++MODULE_DEVICE_TABLE(of, ptn5150_of_match);
++
++static struct i2c_driver ptn5150_i2c_driver = {
++    .driver = {
++        .owner = THIS_MODULE,
++        .name = "ptn5150",
++        .of_match_table = ptn5150_of_match,
++    },
++    .probe = ptn5150_probe,
++    .remove = ptn5150_remove,
++    .id_table = ptn5150_id,
++};
++
++builtin_i2c_driver(ptn5150_i2c_driver);
++
++MODULE_AUTHOR("Parker Newman <pnewman@connecttech.com>");
++MODULE_LICENSE("GPL v2");
++
+diff --git a/drivers/usb/serial/option.c b/drivers/usb/serial/option.c
+index 5330766c5dc1..dfa18eb0033d 100644
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -2083,6 +2083,7 @@ static struct usb_serial_driver option_1port_device = {
+ #ifdef CONFIG_PM
+ 	.suspend           = usb_wwan_suspend,
+ 	.resume            = usb_wwan_resume,
++	.reset_resume      = usb_wwan_resume,
+ #endif
+ };
+ 
+@@ -2128,6 +2129,9 @@ static int option_probe(struct usb_serial *serial,
+ 	    iface_desc->bInterfaceClass != USB_CLASS_CDC_DATA)
+ 		return -ENODEV;
+ 
++	if (serial->dev->descriptor.idVendor == cpu_to_le16(QUECTEL_VENDOR_ID)   && serial->interface->cur_altsetting->desc.bInterfaceNumber >= 4)
++                return -ENODEV;
++
+ 	/* Store the device flags so we can use them during attach. */
+ 	usb_set_serial_data(serial, (void *)device_flags);
+ 
+diff --git a/drivers/usb/serial/usb_wwan.c b/drivers/usb/serial/usb_wwan.c
+index 0fbb34fcbddf..57e04b660c08 100644
+--- a/drivers/usb/serial/usb_wwan.c
++++ b/drivers/usb/serial/usb_wwan.c
+@@ -21,6 +21,7 @@
+ 
+ #define DRIVER_AUTHOR "Matthias Urlichs <smurf@smurf.noris.de>"
+ #define DRIVER_DESC "USB Driver for GSM modems"
++#define QUECTEL_VENDOR_ID 0x2c7c
+ 
+ #include <linux/kernel.h>
+ #include <linux/jiffies.h>
+@@ -499,7 +500,7 @@ static struct urb *usb_wwan_setup_urb(struct usb_serial_port *port,
+ 				      void (*callback) (struct urb *))
+ {
+ 	struct usb_serial *serial = port->serial;
+-	struct usb_wwan_intf_private *intfdata = usb_get_serial_data(serial);
++	//struct usb_wwan_intf_private *intfdata = usb_get_serial_data(serial);
+ 	struct urb *urb;
+ 
+ 	urb = usb_alloc_urb(0, GFP_KERNEL);	/* No ISO */
+@@ -510,8 +511,13 @@ static struct urb *usb_wwan_setup_urb(struct usb_serial_port *port,
+ 			  usb_sndbulkpipe(serial->dev, endpoint) | dir,
+ 			  buf, len, callback, ctx);
+ 
+-	if (intfdata->use_zlp && dir == USB_DIR_OUT)
+-		urb->transfer_flags |= URB_ZERO_PACKET;
++	//if (intfdata->use_zlp && dir == USB_DIR_OUT)
++	//	urb->transfer_flags |= URB_ZERO_PACKET;
++	if (dir == USB_DIR_OUT) {
++        struct usb_device_descriptor *desc = &serial->dev->descriptor;
++        if (desc->idVendor == cpu_to_le16(QUECTEL_VENDOR_ID))
++            urb->transfer_flags |= URB_ZERO_PACKET;
++    	}
+ 
+ 	return urb;
+ }
+diff --git a/net/wireless/db.txt b/net/wireless/db.txt
+index a2fc3a09ccdc..6e8dbef4c714 100644
+--- a/net/wireless/db.txt
++++ b/net/wireless/db.txt
+@@ -1,17 +1,1700 @@
++wmmrule ETSI:
++	vo_c: cw_min=3, cw_max=7, aifsn=2, cot=2
++	vi_c: cw_min=7, cw_max=15, aifsn=2, cot=4
++	be_c: cw_min=15, cw_max=1023, aifsn=3, cot=6
++	bk_c: cw_min=15, cw_max=1023, aifsn=7, cot=6
++	vo_ap: cw_min=3, cw_max=7, aifsn=1, cot=2
++	vi_ap: cw_min=7, cw_max=15, aifsn=1, cot=4
++	be_ap: cw_min=15, cw_max=63, aifsn=3, cot=6
++	bk_ap: cw_min=15, cw_max=1023, aifsn=7, cot=6
++
++# This is the world regulatory domain
++country 00:
++	(2402 - 2472 @ 40), (20)
++	# Channel 12 - 13.
++	(2457 - 2482 @ 20), (20), NO-IR, AUTO-BW
++	# Channel 14. Only JP enables this and for 802.11b only
++	(2474 - 2494 @ 20), (20), NO-IR, NO-OFDM
++	# Channel 36 - 48
++	(5170 - 5250 @ 80), (20), NO-IR, AUTO-BW
++	# Channel 52 - 64
++	(5250 - 5330 @ 80), (20), NO-IR, DFS, AUTO-BW
++	# Channel 100 - 144
++	(5490 - 5730 @ 160), (20), NO-IR, DFS
++	# Channel 149 - 165
++	(5735 - 5835 @ 80), (20), NO-IR
++	# IEEE 802.11ad (60GHz), channels 1..3
++	(57240 - 63720 @ 2160), (0)
++
++# AD as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries: https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country AD: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country AE: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country AF: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# Source:
++# http://pucanguilla.org/Downloads/January2005-Anguilla%20Table%20of%20Allocations.pdf
++country AI: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++# AL as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country AL: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++
++country AM: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 20), (18)
++	(5250 - 5330 @ 20), (18), DFS
++
++country AN: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country AR: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country AS: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# AT as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# AT: https://www.rtr.at/en/tk/Spektrum5GHz/1997_bmvit-info-052010en.pdf
++# AT: acceptance https://www.ris.bka.gv.at/Dokumente/BgblAuth/BGBLA_2014_II_63/BGBLA_2014_II_63.pdfsig
++country AT: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# Source:
++# https://www.legislation.gov.au/Details/F2016C00432
++# Both DFS-ETSI and DFS-FCC are acceptable per AS/NZS 4268 Appendix B.
++# The EIRP for DFS bands can be increased by 3dB if TPC is implemented.
++# In order to allow 80MHz operation between 5650-5730MHz the upper boundary
++# of this more restrictive band has been shifted up by 5MHz from 5725MHz.
++country AU: DFS-ETSI
++	(2400 - 2483.5 @ 40), (36)
++	(5150 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
++	(5250 - 5350 @ 80), (20), NO-OUTDOOR, AUTO-BW, DFS
++	(5470 - 5600 @ 80), (27), DFS
++	(5650 - 5730 @ 80), (27), DFS
++	(5730 - 5850 @ 80), (36)
++	(57000 - 66000 @ 2160), (43), NO-OUTDOOR
++
++country AW: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country AZ: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (18), AUTO-BW
++	(5250 - 5330 @ 80), (18), DFS, AUTO-BW
++
++# BA as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country BA: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country BB: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++country BD: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5735 - 5835 @ 80), (30)
++
++# BE as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# BE: https://www.ibpt.be/public/files/en/21760/B03-01_2.1_EN.pdf
++# BE: https://www.ibpt.be/public/files/en/21761/B03-02_2.1_EN.pdf
++# BE: https://www.ibpt.be/public/files/en/21762/B03-03_2.1_EN.pdf
++# BE: https://www.ibpt.be/public/files/en/22165/B01-28_3.1_EN.pdf
++country BE: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country BF: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Bulgarian rules as defined by the Communications Regulation Commission in the
++# following documents:
+ #
+-# This file is a placeholder to prevent accidental build breakage if someone
+-# enables CONFIG_CFG80211_INTERNAL_REGDB.  Almost no one actually needs to
+-# enable that build option.
++# Rules for carrying out electronic communications through radio equipment using
++# radio spectrum, which does not need to be individually assigned (the Rules):
++# http://www.crc.bg/files/_bg/Pravila_09_06_2015.pdf
+ #
+-# You should be using CRDA instead.  It is even better if you use the CRDA
+-# package provided by your distribution, since they will probably keep it
+-# up-to-date on your behalf.
++# List of radio equipment that uses harmonized within the European Union bands
++# and electronic communications terminal equipment (the List):
++# http://www.crc.bg/files/_bg/Spisak_2015.pdf
+ #
+-# If you _really_ intend to use CONFIG_CFG80211_INTERNAL_REGDB then you will
+-# need to replace this file with one containing appropriately formatted
+-# regulatory rules that cover the regulatory domains you will be using.  Your
+-# best option is to extract the db.txt file from the wireless-regdb git
+-# repository:
++# Note: The transmit power limits in the 5250-5350 MHz and 5470-5725 MHz bands
++# can be raised by 3 dBm if TPC is enabled. Refer to BDS EN 301 893 for details.
+ #
+-#   git://git.kernel.org/pub/scm/linux/kernel/git/linville/wireless-regdb.git
++# BG as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# BG: https://crc.bg/files/_en/Electronic_Communications_Revised_EN1.pdf
++# BG: acceptance of 2006/771/EC https://crc.bg/files/Pravila_06_12_2018.pdf
++country BG: DFS-ETSI
++	# Wideband data transmission systems (WDTS) in the 2.4GHz ISM band, ref:
++	# I.22 of the List, BDS EN 300 328
++	(2400 - 2483.5 @ 40), (100 mW)
++	# 5 GHz Radio Local Area Networks (RLANs), ref:
++	# II.H01 of the List, BDS EN 301 893
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	# II.H01 of the List, I.54 from the List, BDS EN 301 893
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	# I.43 of the List, BDS EN 300 440-2, BDS EN 300 440-1
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	# II.H03 of the List, BDS EN 302 567-2
++	(57000 - 66000 @ 2160), (40)
++
++country BH: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 20), (20)
++	(5250 - 5330 @ 20), (20), DFS
++	(5735 - 5835 @ 20), (20)
++
++country BL: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country BM: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country BN: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (20)
++
++country BO: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5250 - 5330 @ 80), (30), DFS
++	(5735 - 5835 @ 80), (30)
++
++country BR: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country BS: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://www.bicma.gov.bt/paper/publication/nrrpart4.pdf
++country BT: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country BY: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country BZ: DFS-JP
++	(2402 - 2482 @ 40), (30)
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# https://www.ic.gc.ca/eic/site/smt-gst.nsf/vwapj/rss-247-i2-e.pdf/$file/rss-247-i2-e.pdf
++country CA: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5150 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
++	(5250 - 5350 @ 80), (24), DFS, AUTO-BW
++	(5470 - 5600 @ 80), (24), DFS
++	(5650 - 5730 @ 80), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://www.art-rca.org
++country CF: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 40), (17)
++	(5250 - 5330 @ 40), (24), DFS
++	(5490 - 5730 @ 40), (24), DFS
++	(5735 - 5835 @ 40), (30)
++
++
++# CH as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# CH: https://www.ofcomnet.ch/api/rir/1010/05
++# CH: https://www.ofcomnet.ch/api/rir/1010/04
++# CH: https://www.ofcomnet.ch/api/rir/1008/12
++# CH: https://www.ofcomnet.ch/#/fatTable
++country CH: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country CI: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country CL: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (20)
++
++country CN: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++	# 60 GHz band channels 1,4: 28dBm, channels 2,3: 44dBm
++	# ref: http://www.miit.gov.cn/n11293472/n11505629/n11506593/n11960250/n11960606/n11960700/n12330791.files/n12330790.pdf
++	(57240 - 59400 @ 2160), (28)
++	(59400 - 63720 @ 2160), (44)
++	(63720 - 65880 @ 2160), (28)
++
++country CO: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country CR: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 20), (17)
++	(5250 - 5330 @ 20), (24), DFS
++	(5490 - 5730 @ 20), (24), DFS
++	(5735 - 5835 @ 20), (30)
++
++# Source:
++# https://www.mincom.gob.cu/es/marco-legal
++# - Redes Informáticas
++#    Resolución 98- 2019 Reglamento de Redes Inalámbricas:
++# https://www.mincom.gob.cu/sites/default/files/marcoregulatorio/r_98-19_reglamento_redes_inalambricas.pdf
++country CU: DFS-FCC
++	(2400 - 2483.5 @ 40), (200 mW)
++	(5150 - 5350 @ 80), (200 mW), NO-IR, NO-OUTDOOR
++	(5470 - 5725 @ 80), (250 mW), NO-IR
++	(5725 - 5850 @ 80), (200 mW)
++
++country CX: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++
++# CY as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# CY: http://www.mcw.gov.cy/mcw/dec/dec.nsf/all/292484CFC7013DD4C2256EBA0023D447/$file/Sxedio%20Radiosyxnothtwn%20ths%20Dhmokratias-3-8-2018-E2.2(English%20Unified%20Unofficial).pdf?openelement
++country CY: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# CZ as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# CZ: https://www.ctu.cz/cs/download/vseobecna-opravneni/archiv/vo-r_12-06_2010-09.pdf
++# CZ: https://www.ctu.cz/sites/default/files/obsah/ctu/vseobecne-opravneni-c.vo-r/10/12.2017-10/obrazky/vo-r10-122017-10.pdf
++country CZ: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# DE as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
+ #
++# Allocation for the 2.4 GHz band (Vfg 10 / 2013, Allgemeinzuteilung von
++# Frequenzen für die Nutzung in lokalen Netzwerken; Wireless Local Area
++# Networks (WLAN-Funkanwendungen).
++# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2013_10_WLAN_2,4GHz_pdf.pdf
++#
++# Allocation for the 5 GHz band (Vfg. 7 / 2010, Allgemeinzuteilung von
++# Frequenzen in den Bereichen 5150 MHz - 5350 MHz und 5470 MHz - 5725 MHz für
++# Funkanwendungen zur breitbandigen Datenübertragung, WAS/WLAN („Wireless
++# Access Systems including Wireless Local Area Networks“).
++# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2010_07_WLAN_5GHz_pdf.pdf
++#
++# The ETSI EN 300 440-1 standard for short range devices in the 5 GHz band has
++# been implemented in Germany:
++# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2014_69_SRD_pdf.pdf
++#
++# Allocation for the 60 GHz band (Allgemeinzuteilung von Frequenzen im
++# Bereich 57 GHz - 66 GHz für Funkanwendungen für weitbandige
++# Datenübertragungssysteme; „Multiple Gigabit WAS/RLAN Systems (MGWS)“).
++# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2011_08_MGWS_pdf.pdf
++#
++# Allocation for the WiFi 6E Band (Allgemeinzuteilung von Frequenzen im
++# Bereich 5945 MHz - 6425 MHz für drahtlose Zugangssysteme,
++# einschließlich lokaler Funknetze WAS/WLAN („Wireless Access Systems
++# including Wireless Local Area Networks“))
++# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/MobilfunkDectWlanCBFunk/vfg552021WLAN6GHz.pdf
++country DE: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# WiFi 6E
++	(5945 - 6425 @ 160), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# DK as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# DK: https://ens.dk/sites/ens.dk/files/Tele/frekvensplan_0.pdf
++# 5GHz: https://erhvervsstyrelsen.dk/sites/default/files/007_interface-datanet_5-6_ghz.pdf.pdf
++# 60GHz: https://erhvervsstyrelsen.dk/sites/default/files/radiograenseflader-63.pdf
++country DK: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# Source:
++# http://www.ntrcdom.org/index.php?option=com_content&view=category&layout=blog&id=10&Itemid=55
++country DM: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++country DO: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++country DZ: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170.000 - 5250.000 @ 80.000), (23.00), AUTO-BW
++	(5250.000 - 5330.000 @ 80.000), (23.00), DFS, AUTO-BW
++	(5490.000 - 5670.000 @ 160.000), (23.00), DFS
++
++# Source:
++# https://www.arcotel.gob.ec/wp-content/uploads/2018/04/NORMA-ESPECTRO-DE-USO-LIBRE-Y-ESPECTRO-PARA-USO-DETERMINADO-EN-BANDAS-LIBRES.pdf
++country EC: DFS-FCC
++	(2400 - 2483.5 @ 40), (1000 mW)
++	(5150 - 5250 @ 80), (50 mW), AUTO-BW, DFS
++	(5250 - 5350 @ 80), (125 mW), AUTO-BW, DFS
++	(5470 - 5725 @ 160), (125 mW), DFS
++	(5725 - 5850 @ 80), (1000 mW)
++
++# EE as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# EE: https://www.ttja.ee/et/ettevottele-organisatsioonile/sideteenused/raadioseadmed/wifi-seade
++# EE: https://www.itu.int/ITU-D/study_groups/SGP_1998-2002/JGRES09/pdf/estonia.pdf
++country EE: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# https://www.tra.gov.eg/en/industry/importing-of-equipment/Pages/Regulations-for-use-of-Wireless-Networks-Devices.aspx
++country EG: DFS-ETSI
++	(2402 - 2483.5 @ 40), (20)
++	(5150 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++
++# ES as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# ES: https://avancedigital.mineco.gob.es/espectro/Paginas/cnaf.aspx
++country ES: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country ET: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# FI as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country FI: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country FM: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# FR as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country FR: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# GB as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# GB: https://www.ofcom.org.uk/__data/assets/pdf_file/0019/136009/Ofcom-Information-Sheet-5-GHz-RLANs.pdf
++# GB: https://www.ofcom.org.uk/__data/assets/pdf_file/0028/84970/ir-2030.pdf
++# GB: https://www.ofcom.org.uk/__data/assets/pdf_file/0013/126121/Statement_Implementing-Ofcoms-decision-on-the-57-71GHz-band.pdf
++country GB: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5730 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5850 @ 80), (200 mW), NO-OUTDOOR
++	# 60 GHz band channels 1-6
++	(57000 - 71000 @ 2160), (40)
++
++country GD: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country GE: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (18), AUTO-BW
++	(5250 - 5330 @ 80), (18), DFS, AUTO-BW
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country GF: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country GH: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country GL: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country GP: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++# GR as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# GR: https://www.eett.gr/opencms/export/sites/default/EETT_EN/Electronic_Communications/Radio_Communications/TelecommunicationEquipment/Radio_equipment_interface_requirement_2012.pdf
++# GR: https://www.eett.gr/opencms/export/sites/default/EETT_EN/Electronic_Communications/Radio_Communications/TelecommunicationEquipment/Radio_equipment_interface_requirement_107.pdf
++country GR: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country GT: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++country GU: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 20), (17)
++	(5250 - 5330 @ 20), (24), DFS
++	(5490 - 5730 @ 20), (24), DFS
++	(5735 - 5835 @ 20), (30)
++
++country GY:
++	(2402 - 2482 @ 40), (30)
++	(5735 - 5835 @ 80), (30)
++
++country HK: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country HN: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country HR: DFS-ETSI
++# HR as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# HR: http://tablice.hakom.hr:8080/vis?lang=en
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (200 mW), DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country HT: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# HU as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# HU: http://stir.nmhh.hu/?oldal=dokumentumGeneralo&root_rendeletelem_id=3&hatalyos=1
++# HU: http://english.nmhh.hu/cikk/297/Eljarasi_tajekoztato_a_24_GHzes_es_az_5_GHzes_savban_mukodo_berendezesek_engedelyezeserol
++# HU: http://nmhh.hu/dokumentum/319/kis_hatotavolsagu_eszkozok_srdk.pdf
++country HU: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country ID: DFS-JP
++	# ref: https://jdih.kominfo.go.id/produk_hukum/view/id/676/t/peraturan+menteri+komunikasi+dan+informatika+nomor+1+tahun+2019+tanggal+24+april+2019
++	(2400 - 2483.5 @ 40), (500 mW), NO-OUTDOOR
++	(5150 - 5350 @ 80), (200 mW), NO-OUTDOOR
++	(5725 - 5825 @ 80), (200 mW), NO-OUTDOOR
++
++# IE as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# IE: https://www.comreg.ie/publication-download/interface-requirements-for-radio-services-in-ireland
++# IE: https://www.comreg.ie/publication-download/permitted-short-range-devices-ireland
++country IE: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country IL: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW
++	(5250 - 5350 @ 80), (200 mW), NO-OUTDOOR, DFS, AUTO-BW
++
++country IN:
++	(2402 - 2482 @ 40), (20)
++	(5150 - 5250 @ 80), (30)
++	(5250 - 5350 @ 80), (24)
++	(5470 - 5725 @ 160), (24)
++	(5725 - 5875 @ 80), (30)
++
++country IR: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5735 - 5835 @ 80), (30)
++
++# IS as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# IS: https://www.pfs.is/library/Skrar/Tidnir-og-taekni/MHZ_21022019.pdf
++country IS: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# IT as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country IT: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country JM: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country JO: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (23)
++	(5735 - 5835 @ 80), (23)
++
++country JP: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(2474 - 2494 @ 20), (20), NO-OFDM
++	(4910 - 4990 @ 40), (23)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (23), DFS
++	# 60 GHz band channels 2-4 at 10mW,
++	# ref: http://www.arib.or.jp/english/html/overview/doc/1-STD-T74v1_1.pdf
++	(57000 - 66000 @ 2160), (10 mW)
++
++country KE: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (23)
++	(5490 - 5570 @ 80), (30), DFS
++	(5735 - 5775 @ 40), (23)
++
++country KH: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# Source
++# http://ntrc.kn/?page_id=7
++country KN: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (30), DFS
++	(5735 - 5815 @ 80), (30)
++
++country KP: DFS-JP
++	(2402 - 2482 @ 20), (20)
++	(5170 - 5250 @ 20), (20)
++	(5250 - 5330 @ 20), (20), DFS
++	(5490 - 5630 @ 20), (30), DFS
++	(5735 - 5815 @ 20), (30)
++
++country KR: DFS-JP
++	# ref: https://www.rra.go.kr
++	(2400 - 2483.5 @ 40), (23)
++	(5150 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5350 @ 80), (20), DFS, AUTO-BW
++	(5470 - 5725 @ 160), (20), DFS
++	(5725 - 5835 @ 80), (23)
++	# 60 GHz band channels 1-4,
++	# ref: http://www.law.go.kr/%ED%96%89%EC%A0%95%EA%B7%9C%EC%B9%99/%EB%AC%B4%EC%84%A0%EC%84%A4%EB%B9%84%EA%B7%9C%EC%B9%99
++	(57000 - 66000 @ 2160), (43)
++
++country KW: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++
++country KY: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://adilet.zan.kz/rus/docs/V1500010730
++# http://adilet.zan.kz/rus/docs/V1500010375
++country KZ: DFS-ETSI
++	(2400 - 2483.5 @ 40), (20)
++	(5150 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
++	(5250 - 5350 @ 80), (20), NO-OUTDOOR, DFS, AUTO-BW
++	(5470 - 5725 @ 160), (20), NO-OUTDOOR, DFS
++	(5725 - 5850 @ 80), (20), NO-OUTDOOR
++	(57000 - 66000 @ 2160), (40)
++
++country LB: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://www.ntrc.org.lc/operational_structures.htm
++country LC: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (30), DFS
++	(5735 - 5815 @ 80), (30)
++
++# LI as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# LI: https://www.ofcomnet.ch/api/rir/1010/05
++# LI: https://www.ofcomnet.ch/api/rir/1010/04
++# LI: https://www.ofcomnet.ch/api/rir/1008/12
++# LI: https://www.ofcomnet.ch/#/fatTable
++country LI: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country LK: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 20), (17)
++	(5250 - 5330 @ 20), (24), DFS
++	(5490 - 5730 @ 20), (24), DFS
++	(5735 - 5835 @ 20), (30)
++
++# Source:
++# http://lca.org.ls/images/documents/lesotho_national_frequency_allocation_plan.pdf
++country LS: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# LT as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# LT: https://www.rrt.lt/en/radio-spectrum/frequency-management/ or direct link:
++# LT: https://www.e-tar.lt/portal/lt/legalAct/6e718fd037a011e69101aaab2992cbcd/dGRioCBBHb
++country LT: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# LU as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# LU: https://assets.ilr.lu/frequences/Documents/ILRLU-1723895916-183.pdf#search=en%20300%20440
++country LU: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# LV as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# LV: http://likumi.lv/doc.php?id=198903
++country LV: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country MA: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++
++# MC as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country MC: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++
++# Source:
++# http://www.cnfr.md/index.php?pag=sec&id=117&l=en
++# MD as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country MD: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++
++# Source:
++# http://www.cept.org/files/1050/Tools%20and%20Services/EFIS%20-%20ECO%20Frequency%20Information%20System/National%20frequency%20tables/Montenegro%20NAFT%20-%202010.pdf
++# ME as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country ME: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++
++country MF: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country MH: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# MK as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country MK: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country MN: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country MO: DFS-FCC
++	(2402 - 2482 @ 40), (23)
++	(5170 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (30), DFS
++	(5735 - 5835 @ 80), (30)
++
++country MP: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country MQ: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++# Source:
++# http://www.are.mr/pdfs/telec_freq_TNAbf_2010.pdf
++country MR: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# MT as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# MT: https://www.mca.org.mt/sites/default/files/NFP_edition%206-1.pdf
++country MT: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country MU: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://www.cam.gov.mv/docs/tech_standards/TAM-TS-100-2004-WLAN.pdf
++country MV: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), AUTO-BW
++	(5250 - 5350 @ 80), (100 mW), DFS, AUTO-BW
++	(5725 - 5850 @ 80), (100 mW)
++
++country MW: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country MX: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country MY: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5650 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (24)
++
++country NG: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5250 - 5330 @ 80), (30), DFS
++	(5735 - 5835 @ 80), (30)
++
++country NI: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# NL as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# NL: http://wetten.overheid.nl/BWBR0036378/2015-03-05
++country NL: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# NO as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# NO: https://eng.nkom.no/technical/temporary-licenses/mobile-videolink/wireless-cameras-mobile-video-links/_attachment/9947
++# NO: http://www.lovdata.no/dokument/SF/forskrift/2012-01-19-77
++# In addition to EU NO can use 5725–5795 MHz and 5815–5850 bands with limit of 4 W EIRP (with DFS and TPC)
++country NO: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# WiFi 6E
++	(5945 - 6425 @ 160), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 71000 @ 2160), (40)
++
++country NP: DFS-JP
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (20)
++
++country NZ: DFS-ETSI
++	(2402 - 2482 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country OM: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# Source:
++# http://www.asep.gob.pa/images/telecomunicaciones/Anexos/PNAF-dic2015.pdf
++country PA: DFS-FCC
++	(2400 - 2483.5 @ 40), (36)
++	(5150 - 5250 @ 80), (36), AUTO-BW
++	(5250 - 5350 @ 80), (30), AUTO-BW
++	(5470 - 5725 @ 160), (30)
++	(5725 - 5850 @ 80), (36)
++	(57000 - 64000 @ 2160), (43)
++
++country PE: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country PF: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country PG: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country PH: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country PK: DFS-JP
++	# https://fab.gov.pk/type-approval/
++	# https://pta.gov.pk/media/Pakistan_Table_of_Frequency_Allocations.pdf
++	(2402 - 2482 @ 40), (20)
++	(5725 - 5875 @ 80), (30)
++
++# PL as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country PL: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country PM: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country PR: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# PT as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# PT: https://www.anacom.pt/render.jsp?categoryId=336334
++country PT: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++country PW: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country PY: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country QA: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW), NO-OUTDOOR
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW
++	(5250 - 5350 @ 80), (200 mW), NO-OUTDOOR, DFS, AUTO-BW
++	(5470 - 5725 @ 160), (100 mW), NO-OUTDOOR, DFS
++	(5725 - 5875 @ 80), (100 mW), NO-OUTDOOR, DFS
++	(57000 - 66000 @ 2160), (40), NO-OUTDOOR
++
++country RE: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++# RO as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# RO: http://www.ancom.org.ro/en/uploads/links_files/ordin_262_2006.pdf
++country RO: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# Source:
++# http://www.ratel.rs/upload/documents/Plan_namene/Plan_namene-sl_glasnik.pdf
++# RS as part of CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++country RS: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country RU:
++	(2400 - 2483.5 @ 40), (20)
++	(5150 - 5350 @ 160), (20), NO-OUTDOOR
++	(5650 - 5850 @ 160), (20), NO-OUTDOOR
++	# 60 GHz band channels 1-4, ref: Changes to NLA 124_Order №129_22042015.pdf
++	(57000 - 66000 @ 2160), (40), NO-OUTDOOR
++
++country RW: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country SA: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# SE as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# SE: https://pts.se/globalassets/startpage/dokument/legala-dokument/foreskrifter/radio/beslutade_ptsfs-2018-3-undantagsforeskrifter.pdf
++country SE: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# https://www.imda.gov.sg/-/media/Imda/Files/Regulation-Licensing-and-Consultations/ICT-Standards/Telecommunication-Standards/Radio-Comms/IMDATSSRD.pdf
++# IMDA TS SRD, Issue 1 Revision 1, April 2019, subsequently "IMDA TS SRD"
++# 2400 - 2483.5 MHz: IMDA TS SRD, Table 1 (25); ANSI C63.10-2013 and FCC Part 15 Section 15.247 or EN 300 328
++# 5150 - 5350 MHz: IMDA TS SRD, Table 1 (29); FCC Part 15 Section 15.407 (1) 5.15-5.25 GHz (2) 5.25-5.35 GHz; EN 301 893
++# 5470 - 5725 MHz: IMDA TS SRD, Table 1 (30); FCC Part 15 Section 15.407 (2) 5.47-5.725 GHz; EN 301 893
++# 5725 - 5850 MHz: IMDA TS SRD, Table 1 (27); FCC Part 15 Section 15.247; FCC Part 15 Section 15.407 (3) 5.725-5.85 GHz
++# 57000 - 66000 MHz: IMDA TS SRD, Table 1 (31); ETSI EN 302 567
++# Note: 27dBm for 5470-5725MHz bands is 3dBm reduction per FCC Part 15 Section 15.407 (2) 5.47-5.725 GHz; EN 301 893 as referenced by IMDA TS SRD
++#  AU and BG regulatory domains use the same interpretation of cited FCC and ETSI standards
++# Note: The transmit power for 5250-5350MHz bands can be raised by 3dBm when TPC is implemented: IMDA TS SRD Table 1 (29)
++# Note: The transmit power for 5470-5725MHz bands can be raised by 3dBm when TPC is implemented: IMDA TS SRD Table 1 (30)
++
++country SG: DFS-FCC
++	(2400 - 2483.5 @ 40), (23)
++	(5150 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5350 @ 80), (20), DFS, AUTO-BW
++	(5470 - 5725 @ 160), (27), DFS
++	(5725 - 5850 @ 80), (30)
++	(57000 - 66000 @ 2160), (40)
++
++# SI as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# SI: https://www.akos-rs.si/bwa
++country SI: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# SK as part of EU/CEPT accepted decisions 2005/513/EC (5GHz RLAN, EN 301 893)
++# and 2006/771/EC (amended by 2008/432/EC, Short-Range Devices, EN 300 440)
++#  EU decision 2005/513/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02005D0513-20070213
++#  EU decision 2006/771/EC: https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:02008D0432-20080611
++# Harmonized CEPT countries (July 2019): https://www.ecodocdb.dk/download/25c41779-cd6e/Rec7003e.pdf
++# SK: https://www.teleoff.gov.sk/data/files/25911.pdf
++# SK: https://www.teleoff.gov.sk/data/files/41072.pdf
++# SK: https://www.teleoff.gov.sk/data/files/49125_vpr-01_2018-rusi-vpr-10_2014a21_2012-nespecifik-srd_021018.pdf
++country SK: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW)
++	(5150 - 5250 @ 80), (200 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), NO-OUTDOOR, DFS, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (500 mW), DFS, wmmrule=ETSI
++	# short range devices (ETSI EN 300 440-1)
++	(5725 - 5875 @ 80), (25 mW)
++	# 60 GHz band channels 1-4 (ETSI EN 302 567)
++	(57000 - 66000 @ 2160), (40)
++
++# Source:
++# Regulation N° 2004-005 ART/DG/DRC/D.Rég
++country SN: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country SR: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country SV: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 20), (17)
++	(5250 - 5330 @ 20), (23), DFS
++	(5735 - 5835 @ 20), (30)
++
++country SY:
++	(2402 - 2482 @ 40), (20)
++
++# Source:
++# http://www.telecommission.tc/Spectrum-plan20110324-101210.html
++country TC: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5730 @ 160), (24), DFS, wmmrule=ETSI
++	(5735 - 5835 @ 80), (30)
++
++country TD: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++country TG: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 40), (20)
++	(5250 - 5330 @ 40), (20), DFS
++	(5490 - 5710 @ 40), (27), DFS
++
++country TH: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country TN: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++
++# Source:
++# By-Law on Short Range Radio Devices (SRD) Oct 2015
++# https://www.btk.gov.tr/File/?path=ROOT%2f1%2fDocuments%2fOrdinance%2fBY%2DLAW%20ON%20SHORT%20RANGE%20DEVICES.pdf
++# Article 8
++country TR: DFS-ETSI
++	(2400 - 2483.5 @ 40), (20)
++	(5170 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, NO-OUTDOOR, AUTO-BW
++	(5470 - 5725 @ 160), (27), DFS
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40)
++
++country TT: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# Table of Frequency Allocations of Republic of China (Taiwan) / Feb 2017:
++#   https://www.motc.gov.tw/websitedowndoc?file=post/201702221012200.doc& \
++#	filedisplay=Table%2Bof%2Bradio%2Bfrequency%2Ballocation.doc
++# LP0002 Low-power Radio-frequency Devices Technical Regulations / 23 Aug 2016:
++#   http://www.ncc.gov.tw/english/show_file.aspx?table_name=news&file_sn=681
++country TW: DFS-FCC
++	# 2.4g band, LP0002 section 3.10.1
++	(2400 - 2483.5 @ 40), (30)
++	# 5g U-NII band, LP0002 section 4.7
++	# 5.15 ~ 5.25 GHz: 30 dBm for master mode, 23 dBm for clients
++	(5150 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5350 @ 80), (23), DFS, AUTO-BW
++	# This range ends at 5725 MHz, but channel 144 extends to 5730 MHz.
++	# Since 5725 ~ 5730 MHz belongs to the next range which has looser
++	# requirements, we can extend the range by 5 MHz to make the kernel
++	# happy and be able to use channel 144.
++	(5470 - 5730 @ 160), (23), DFS
++	(5725 - 5850 @ 80), (30)
++	# 60g band, LP0002 section 3.13.1.1 (3)(C), EIRP=40dBm(43dBm peak)
++	(57000 - 66000 @ 2160), (40)
++ 
++country TZ:
++	(2402 - 2482 @ 40), (20)
++	(5735 - 5835 @ 80), (30)
++
++# Source: https://zakon.rada.gov.ua/laws/show/z0201-15#n48
++# Although it is allowed to use up to 250 mW for some 5 GHz frequency ranges,
++# all of them are limited to 100 mW for IEEE 802.11n and IEEE 802.11ac.
++# 2.4 GHz band channels can be used outdoors when some requirements are met.
++# 5 GHz band channels must be used only indoors in some cases. They are neither
++# permitted nor denied outdoors in others.
++country UA: DFS-ETSI
++	(2400 - 2483.5 @ 40), (100 mW), NO-OUTDOOR
++	(5150 - 5250 @ 80), (100 mW), NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5250 - 5350 @ 80), (100 mW), DFS, NO-OUTDOOR, AUTO-BW, wmmrule=ETSI
++	(5470 - 5725 @ 160), (100 mW), DFS, NO-OUTDOOR, wmmrule=ETSI
++	(5725 - 5850 @ 80), (100 mW), NO-OUTDOOR
++	# 60 GHz band channels 1-4, ref: Etsi En 302 567
++	(57000 - 66000 @ 2160), (40 mW), NO-OUTDOOR
++
++country UG: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# https://www.ecfr.gov/cgi-bin/text-idx?SID=eed706a2c49fd9271106c3228b0615f3&mc=true&node=pt47.1.15&rgn=div5
++# Title 47 Part 15 - Radio Frequency Devices, April 2, 2020
++# Channels 12 and 13 are not forbidden, but are not normally used with full
++# power in order to avoid any potential interference in the adjacent restricted
++# frequency band, 2,483.5–2,500 MHz which is subject to strict emission limits
++# set out in 47 CFR § 15.205. TODO: reenable and specify a safe TX power here.
++country US: DFS-FCC
++	(2400 - 2472 @ 40), (30)
++	# 5.15 ~ 5.25 GHz: 30 dBm for master mode, 23 dBm for clients
++	(5150 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5350 @ 80), (23), DFS, AUTO-BW
++	# This range ends at 5725 MHz, but channel 144 extends to 5730 MHz.
++	# Since 5725 ~ 5730 MHz belongs to the next range which has looser
++	# requirements, we can extend the range by 5 MHz to make the kernel
++	# happy and be able to use channel 144.
++	(5470 - 5730 @ 160), (23), DFS
++	(5730 - 5850 @ 80), (30), AUTO-BW
++	# https://www.federalregister.gov/documents/2021/05/03/2021-08802/use-of-the-5850-5925-ghz-band
++	# max. 33 dBm AP @ 20MHz, 36 dBm AP @ 40Mhz+, 6 dB less for clients
++	(5850 - 5895 @ 40), (27), NO-OUTDOOR, AUTO-BW, NO-IR
++	# 60g band
++	# reference: section IV-D https://docs.fcc.gov/public/attachments/FCC-16-89A1.pdf
++	# channels 1-6 EIRP=40dBm(43dBm peak)
++	(57240 - 71000 @ 2160), (40)
++
++country UY: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://cemc.uz/article/1976/
++country UZ: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++
++# Source:
++# http://www.ntrc.vc/regulations/Jun_2006_Spectrum_Managment_Regulations.pdf
++country VC: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
++# Source:
++# Official Gazette (Gaceta Oficial) concerning Unlicensed transmitter use
++# (10 June 2013)
++# http://www.conatel.gob.ve/
++country VE: DFS-FCC
++	(2402 - 2482 @ 40), (30)
++	(5170 - 5250 @ 80), (23), AUTO-BW
++	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
++	(5735 - 5835 @ 80), (30)
++
++country VI: DFS-FCC
++	(2402 - 2472 @ 40), (30)
++	(5170 - 5250 @ 80), (24), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country VN: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17)
++	(5250 - 5330 @ 80), (24), DFS
++	(5490 - 5730 @ 80), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++# Source:
++# http://www.trr.vu/attachments/category/130/GURL_for_Short-range_Radiocommunication_Devices2.pdf
++country VU: DFS-FCC
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (17), AUTO-BW
++	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
++	(5490 - 5730 @ 160), (24), DFS
++	(5735 - 5835 @ 80), (30)
++
++country WF: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country WS: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 40), (20)
++	(5250 - 5330 @ 40), (20), DFS
++	(5490 - 5710 @ 40), (27), DFS
++
++country YE:
++	(2402 - 2482 @ 40), (20)
++
++country YT: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW, wmmrule=ETSI
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW, wmmrule=ETSI
++	(5490 - 5710 @ 160), (27), DFS, wmmrule=ETSI
++
++country ZA: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (30)
++
++country ZW: DFS-ETSI
++	(2402 - 2482 @ 40), (20)
++	(5170 - 5250 @ 80), (20), AUTO-BW
++	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
++	(5490 - 5710 @ 160), (27), DFS
++
+diff --git a/nvidia/drivers/media/i2c/imx477.c b/nvidia/drivers/media/i2c/imx477.c
+index 8f436bb1ee68..3809e0010955 100644
+--- a/nvidia/drivers/media/i2c/imx477.c
++++ b/nvidia/drivers/media/i2c/imx477.c
+@@ -259,46 +259,54 @@ static int imx477_set_exposure(struct tegracam_device *tc_dev, s64 val)
+ 	struct device *dev = tc_dev->dev;
+ 	const struct sensor_mode_properties *mode =
+ 	    &s_data->sensor_props.sensor_modes[s_data->mode_prop_idx];
+-
+ 	int err = 0;
++	int i = 0;
+ 	imx477_reg ct_regs[2];
+ 	const s32 max_coarse_time = priv->frame_length - IMX477_MAX_COARSE_DIFF;
+-	const s32 fine_integ_time_factor = priv->fine_integ_time *
+-	    mode->control_properties.exposure_factor /
+-	    mode->signal_properties.pixel_clock.val;
+-	u32 coarse_time;
+-	int i;
++	u32 coarse_time = 0;
++	u32 fine_int_time = 0;
++	u32 int_factor = val * mode->signal_properties.pixel_clock.val /
++	    mode->control_properties.exposure_factor;
++
++	coarse_time = int_factor / mode->image_properties.line_length;
++	fine_int_time = int_factor % mode->image_properties.line_length;
+ 
+ 	dev_dbg(dev, "%s: Setting exposure control to: %lld\n", __func__, val);
+ 
+-	coarse_time = (val - fine_integ_time_factor)
+-	    * mode->signal_properties.pixel_clock.val
+-	    / mode->control_properties.exposure_factor
+-	    / mode->image_properties.line_length;
++	dev_dbg(dev, "%s: Calculated coarse time: %d [lines]\n",
++		__func__, coarse_time);
++	dev_dbg(dev, "%s: Calculated fine integration time: %d [pixels]\n",
++		__func__, fine_int_time);
+ 
+ 	if (coarse_time < IMX477_MIN_COARSE_EXPOSURE)
+ 		coarse_time = IMX477_MIN_COARSE_EXPOSURE;
+ 	else if (coarse_time > max_coarse_time) {
+ 		coarse_time = max_coarse_time;
+-		dev_dbg(dev,
++		dev_err(dev,
+ 			"%s: exposure limited by frame_length: %d [lines]\n",
+ 			__func__, max_coarse_time);
+ 	}
+ 
+-	dev_dbg(dev, "%s: val: %lld [us], coarse_time: %d [lines]\n",
+-		__func__, val, coarse_time);
+-
+ 	imx477_get_coarse_integ_time_regs(ct_regs, coarse_time);
+ 
+ 	for (i = 0; i < 2; i++) {
+ 		err = imx477_write_reg(s_data, ct_regs[i].addr, ct_regs[i].val);
+ 		if (err) {
+-			dev_dbg(dev,
++			dev_err(dev,
+ 				"%s: coarse_time control error\n", __func__);
+ 			return err;
+ 		}
+ 	}
+ 
++	err = imx477_write_reg(s_data, IMX477_FINE_INTEG_TIME_ADDR_MSB,
++			       (fine_int_time >> 8) & 0xFF);
++	err |= imx477_write_reg(s_data, IMX477_FINE_INTEG_TIME_ADDR_LSB,
++				fine_int_time & 0xFF);
++
++	if (err) {
++		dev_err(dev, "%s: fine integration time error\n", __func__);
++	}
++
+ 	return err;
+ }
+ 
+diff --git a/nvidia/drivers/media/platform/tegra/camera/camera_common.c b/nvidia/drivers/media/platform/tegra/camera/camera_common.c
+index ce1f254dd76d..d9a1a8c2a4e5 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/camera_common.c
++++ b/nvidia/drivers/media/platform/tegra/camera/camera_common.c
+@@ -46,11 +46,23 @@ static const struct camera_common_colorfmt camera_common_color_fmts[] = {
+ 		V4L2_COLORSPACE_SRGB,
+ 		V4L2_PIX_FMT_SRGGB12,
+ 	},
++	{
++                MEDIA_BUS_FMT_SBGGR12_1X12,
++                V4L2_COLORSPACE_SRGB,
++                V4L2_PIX_FMT_SBGGR12,
++        },
+ 	{
+ 		MEDIA_BUS_FMT_SGRBG12_1X12,
+ 		V4L2_COLORSPACE_SRGB,
+ 		V4L2_PIX_FMT_SGRBG12,
+ 	},
++#if defined(CONFIG_VIDEO_ECAM_ISP)
++	{
++		MEDIA_BUS_FMT_SGBRG12_1X12,
++		V4L2_COLORSPACE_SRGB,
++		V4L2_PIX_FMT_SGBRG12,
++	},
++#endif
+ 	{
+ 		MEDIA_BUS_FMT_SGBRG12_1X12,
+ 		V4L2_COLORSPACE_SRGB,
+@@ -76,6 +88,16 @@ static const struct camera_common_colorfmt camera_common_color_fmts[] = {
+ 		V4L2_COLORSPACE_SRGB,
+ 		V4L2_PIX_FMT_SBGGR10,
+ 	},
++	{
++		MEDIA_BUS_FMT_SGBRG8_1X8,
++		V4L2_COLORSPACE_SRGB,
++		V4L2_PIX_FMT_SGBRG8,
++	},
++	{
++		MEDIA_BUS_FMT_SGRBG8_1X8,
++		V4L2_COLORSPACE_SRGB,
++		V4L2_PIX_FMT_SGRBG8,
++	}, 
+ 	{
+ 		MEDIA_BUS_FMT_SRGGB8_1X8,
+ 		V4L2_COLORSPACE_SRGB,
+@@ -593,6 +615,7 @@ static void select_mode(struct camera_common_data *s_data,
+ int camera_common_try_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
+ {
+ 	struct camera_common_data *s_data = to_camera_common_data(sd->dev);
++	struct camera_common_sensor_ops *sensor_ops = s_data->ops;
+ 	struct tegra_channel *chan = v4l2_get_subdev_hostdata(sd);
+ 	struct v4l2_control hdr_control;
+ 	const struct camera_common_frmfmt *frmfmt = s_data->frmfmt;
+@@ -667,6 +690,14 @@ int camera_common_try_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
+ 	if (!camera_common_verify_code(chan, mf->code))
+ 		err = -EINVAL;
+ 
++	if (sensor_ops != NULL && sensor_ops->check_unsupported_mode && err == 0){
++	    err = sensor_ops->check_unsupported_mode(s_data, mf);
++	    if (err) {
++		    dev_err(sd->dev, "Error checking unsupported mode\n");
++		    return err;
++	    }
++    }
++	
+ verify_code:
+ 	mf->field = V4L2_FIELD_NONE;
+ 	mf->colorspace = V4L2_COLORSPACE_SRGB;
+@@ -681,6 +712,7 @@ EXPORT_SYMBOL_GPL(camera_common_try_fmt);
+ int camera_common_s_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
+ {
+ 	struct camera_common_data *s_data = to_camera_common_data(sd->dev);
++	struct camera_common_sensor_ops *sensor_ops = s_data->ops;
+ 	int ret;
+ 
+ 	dev_dbg(sd->dev, "%s(%u) size %i x %i\n", __func__,
+@@ -693,6 +725,14 @@ int camera_common_s_fmt(struct v4l2_subdev *sd, struct v4l2_mbus_framefmt *mf)
+ 	ret = camera_common_try_fmt(sd, mf);
+ 
+ 	s_data->colorfmt = camera_common_find_datafmt(mf->code);
++	
++	if (sensor_ops != NULL && sensor_ops->after_set_pixel_format && ret == 0){
++	    ret = sensor_ops->after_set_pixel_format(s_data);
++	    if (ret) {
++		    dev_err(sd->dev, "Error getting current pixel format\n");
++		    return ret;
++	    }
++    }
+ 
+ 	return ret;
+ }
+diff --git a/nvidia/drivers/media/platform/tegra/camera/capture_common.c b/nvidia/drivers/media/platform/tegra/camera/capture_common.c
+index 9a9525ff3cfd..af304374afcd 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/capture_common.c
++++ b/nvidia/drivers/media/platform/tegra/camera/capture_common.c
+@@ -96,6 +96,8 @@ void destroy_buffer_table(struct capture_buffer_table *tab)
+ 	struct hlist_node *next;
+ 	struct capture_mapping *pin;
+ 
++	if(tab == NULL)
++		goto skip;
+ 	write_lock(&tab->hlock);
+ 
+ 	hash_for_each_safe(tab->hhead, bkt, next, pin, hnode) {
+@@ -110,6 +112,7 @@ void destroy_buffer_table(struct capture_buffer_table *tab)
+ 	write_unlock(&tab->hlock);
+ 
+ 	kmem_cache_destroy(tab->cache);
++skip:
+ 	kfree(tab);
+ }
+ 
+diff --git a/nvidia/drivers/media/platform/tegra/camera/sensor_common.c b/nvidia/drivers/media/platform/tegra/camera/sensor_common.c
+index 75f9ff4c9b5a..8addb9dec270 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/sensor_common.c
++++ b/nvidia/drivers/media/platform/tegra/camera/sensor_common.c
+@@ -213,6 +213,12 @@ static int extract_pixel_format(
+ 		*format = V4L2_PIX_FMT_SGBRG12;
+ 	else if (strncmp(pixel_t, "bayer_grbg12", size) == 0)
+ 		*format = V4L2_PIX_FMT_SGRBG12;
++	else if (strncmp(pixel_t, "bayer_gbrg8", size) == 0)
++		*format = V4L2_PIX_FMT_SGBRG8;
++	else if (strncmp(pixel_t, "bayer_rggb8", size) == 0)
++		*format = V4L2_PIX_FMT_SRGGB8;
++	else if (strncmp(pixel_t, "bayer_grbg8", size) == 0)
++	       *format = V4L2_PIX_FMT_SGRBG8;
+ 	else if (strncmp(pixel_t, "rgb_rgb88824", size) == 0)
+ 		*format = V4L2_PIX_FMT_RGB24;
+ 	else if (strncmp(pixel_t, "bayer_wdr_pwl_rggb12", size) == 0)
+@@ -235,6 +241,8 @@ static int extract_pixel_format(
+ 		*format = V4L2_PIX_FMT_UYVY;
+ 	else if (strncmp(pixel_t, "yuv_vyuy16", size) == 0)
+ 		*format = V4L2_PIX_FMT_VYUY;
++	else if (strncmp(pixel_t, "uyvy", size) == 0)
++		*format = V4L2_PIX_FMT_UYVY;
+ 	else {
+ 		pr_err("%s: Need to extend format%s\n", __func__, pixel_t);
+ 		return -EINVAL;
+@@ -538,6 +546,13 @@ static int sensor_common_parse_control_props(
+ 		control->interlace_type = 0;
+ 	else
+ 		control->interlace_type = value;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	err = read_property_u32(node, "max_sync_modes", &value);
++	if(err)
++		control->max_sync_modes = 0;
++	else
++		control->max_sync_modes = value;
++#endif
+ 
+ 	return 0;
+ }
+diff --git a/nvidia/drivers/media/platform/tegra/camera/tegracam_ctrls.c b/nvidia/drivers/media/platform/tegra/camera/tegracam_ctrls.c
+index 4bca039d46b0..b0da2a314fba 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/tegracam_ctrls.c
++++ b/nvidia/drivers/media/platform/tegra/camera/tegracam_ctrls.c
+@@ -52,9 +52,57 @@ static const u32 tegracam_override_cids[] = {
+ 	TEGRA_CAMERA_CID_GAIN,
+ 	TEGRA_CAMERA_CID_EXPOSURE,
+ 	TEGRA_CAMERA_CID_FRAME_RATE,
++    TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES,
++	TEGRA_CAMERA_CID_BLACK_LEVEL,
+ };
+ #define NUM_OVERRIDE_CTRLS ARRAY_SIZE(tegracam_override_cids)
+ 
++static const char * const is_common_stream_mode[] = {
++    [0] = "Standalone",
++    [1] = "Sync Mode",
++    [2] = "External HW Sync Mode",
++};
++
++static const char * const is_common_operation_mode[] = {
++    [0] = "Master Mode",
++    [1] = "Slave Mode",
++};
++
++static const char * const is_common_sync_function[] = {
++    [0] = "Internal Sync",
++    [1] = "External Sync",
++};
++
++static const char * const is_common_i2c_broadcast[] = {
++    [0] = "Unicast",
++    [1] = "Broadcast",
++};
++
++static const char * const is_common_verify_fw_menu[] = {
++    [0]   = "Check",
++    [1]   = "FW OK",
++    [2]   = "FW ERROR",
++};
++
++static const char * const is_common_flip_mirror[] = {
++    [0]   = "No Flip/Mirror",
++    [1]   = "Vertical Flip",
++    [2]   = "Horizontal Mirror",
++    [3]   = "Vertical + Horizontal Flip/Mirror",
++};
++
++static const char * const is_global_shutter_mode[] = {
++    [0] = "Normal Mode",
++    [1] = "Sequential Trigger Mode",
++};
++
++static const char * const timing_generator_mode[] = {
++    [0] = "Disabled",
++	[1] = "Master Mode",
++    [2] = "Slave Mode",
++    [3] = "Trigger Mode",
++};
++
+ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
+ /* Do not change the name field for the controls! */
+ 	{
+@@ -62,7 +110,7 @@ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
+ 		.id = TEGRA_CAMERA_CID_GAIN,
+ 		.name = "Gain",
+ 		.type = V4L2_CTRL_TYPE_INTEGER64,
+-		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.flags = V4L2_CTRL_FLAG_SLIDER, 
+ 		.min = CTRL_U64_MIN,
+ 		.max = CTRL_U64_MAX,
+ 		.def = CTRL_U64_MIN,
+@@ -73,7 +121,7 @@ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
+ 		.id = TEGRA_CAMERA_CID_EXPOSURE,
+ 		.name = "Exposure",
+ 		.type = V4L2_CTRL_TYPE_INTEGER64,
+-		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.flags = V4L2_CTRL_FLAG_SLIDER | V4L2_CTRL_FLAG_UPDATE,
+ 		.min = CTRL_U64_MIN,
+ 		.max = CTRL_U64_MAX,
+ 		.def = CTRL_U64_MIN,
+@@ -95,7 +143,7 @@ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
+ 		.id = TEGRA_CAMERA_CID_FRAME_RATE,
+ 		.name = "Frame Rate",
+ 		.type = V4L2_CTRL_TYPE_INTEGER64,
+-		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.flags = V4L2_CTRL_FLAG_SLIDER | V4L2_CTRL_FLAG_UPDATE,
+ 		.min = CTRL_U64_MIN,
+ 		.max = CTRL_U64_MAX,
+ 		.def = CTRL_U64_MIN,
+@@ -174,6 +222,153 @@ static struct v4l2_ctrl_config ctrl_cfg_list[] = {
+ 		.max = STEREO_EEPROM_SIZE,
+ 		.step = 2,
+ 	},
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_STREAMING_MODE,
++        .name = "Streaming Mode",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_stream_mode) -1,
++        .def = 0,
++        .qmenu = is_common_stream_mode,
++    },
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_OPERATION_MODE,
++        .name = "Operation Mode",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_operation_mode) -1,
++        .def = 0,
++        .qmenu = is_common_operation_mode,
++    },
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_SYNC_FUNCTION,
++        .name = "Synchronizing Function",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_sync_function) -1,
++        .def = 1,
++        .qmenu = is_common_sync_function,
++    },
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_BROADCAST,
++        .name = "I2C Broadcast controls",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_i2c_broadcast) -1,
++        .def = 0,
++        .qmenu = is_common_i2c_broadcast,
++    },
++	{
++		.ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_BLACK_LEVEL,
++        .name = "Black Level",
++		.type = V4L2_CTRL_TYPE_INTEGER64,
++		.flags = V4L2_CTRL_FLAG_SLIDER | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
++		.min = CTRL_U64_MIN,
++		.max = CTRL_U64_MAX,
++		.def = CTRL_U64_MIN,
++		.step = 1,
++	},
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES,
++        .name = "Check Firmware Compatibility",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_verify_fw_menu) -1,
++        .def = 1,
++        .qmenu = is_common_verify_fw_menu,
++    },
++	{
++		.ops = &tegracam_ctrl_ops,
++		.id = TEGRA_CAMERA_CID_DIGITAL_GAIN,
++		.name = "Digital gain",
++		.type = V4L2_CTRL_TYPE_INTEGER64,
++		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.min = CTRL_U64_MIN,
++		.max = CTRL_U64_MAX,
++		.def = CTRL_U64_MIN,
++		.step = 1,
++	},
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_FLIP_MIRROR,
++        .name = "Flip/Mirror",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_common_flip_mirror) -1,
++        .def = 0,
++        .qmenu = is_common_flip_mirror,
++    },
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_SHUTTER_MODE,
++        .name = "Global Shutter Mode",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(is_global_shutter_mode) -1,
++        .def = 0,
++        .qmenu = is_global_shutter_mode,
++    },
++    {
++        .ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_TG_MODE,
++        .name = "Timing Generator Mode",
++        .type = V4L2_CTRL_TYPE_MENU,
++        .min = 0,
++        .max = ARRAY_SIZE(timing_generator_mode) -1,
++        .def = 0,
++        .qmenu = timing_generator_mode,
++    },
++	{
++		.ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_EXPAND_EXPOSURE,
++        .name = "Expanded exposure",
++		.type = V4L2_CTRL_TYPE_INTEGER64,
++		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.min = 0,
++		.max = CTRL_U32_MAX,
++		.def = CTRL_U32_MIN,
++		.step = 1,
++	},
++	{
++		.ops = &tegracam_ctrl_ops,
++        .id = TEGRA_CAMERA_CID_FRAME_DELAY,
++        .name = "Delay frame",
++		.type = V4L2_CTRL_TYPE_INTEGER64,
++		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.min = 0,
++		.max = CTRL_U32_MAX,
++		.def = CTRL_U32_MIN,
++		.step = 1,
++	},
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	{
++		.ops = &tegracam_ctrl_ops,
++		.id = TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT,
++		.name = "Master-Slave Mode",
++		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
++		.min = 0,
++		.max = ARRAY_SIZE(switch_ctrl_qmenu) - 1,
++		.menu_skip_mask = 0,
++		.def = 0,
++		.qmenu_int = switch_ctrl_qmenu,
++	},
++	{
++		.ops = &tegracam_ctrl_ops,
++		.id = TEGRA_CAMERA_CID_FRAME_SYNC,
++		.name = "Frame Sync Mode",
++		.type = V4L2_CTRL_TYPE_INTEGER64,
++		.flags = V4L2_CTRL_FLAG_SLIDER,
++		.min = 0,
++		.max = CTRL_U32_MAX,
++		.step = 1,
++	},
++#endif
+ };
+ 
+ static int tegracam_get_ctrl_index(u32 cid)
+@@ -322,6 +517,53 @@ static int tegracam_set_ctrls(struct tegracam_ctrl_handler *handler,
+ 	case TEGRA_CAMERA_CID_GROUP_HOLD:
+ 		err = ops->set_group_hold(tc_dev, ctrl->val);
+ 		break;
++    case TEGRA_CAMERA_CID_STREAMING_MODE:
++		err = ops->set_streaming_mode(tc_dev, *ctrl->p_new.p_u32);
++		break;
++	case TEGRA_CAMERA_CID_OPERATION_MODE:
++		err = ops->set_operation_mode(tc_dev, *ctrl->p_new.p_u32);
++		break;
++	case TEGRA_CAMERA_CID_SYNC_FUNCTION:
++		err = ops->set_sync_feature(tc_dev, *ctrl->p_new.p_u32);
++		break;
++	case TEGRA_CAMERA_CID_BROADCAST:
++		err = ops->set_broadcast_ctrl(tc_dev, ctrl);
++		break;
++    case TEGRA_CAMERA_CID_BLACK_LEVEL:
++        err = ops->set_black_level(tc_dev, *ctrl->p_new.p_s64);
++        break;
++    case TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES:
++        err = ops->verify_fw_compatibility(tc_dev, &(ctrl->val));
++        break;
++    case TEGRA_CAMERA_CID_DIGITAL_GAIN:
++        err = ops->set_digital_gain(tc_dev, *ctrl->p_new.p_s64);
++        break;
++    case TEGRA_CAMERA_CID_FLIP_MIRROR:
++        err = ops->set_orientation(tc_dev, *ctrl->p_new.p_u32);
++        break;
++    case TEGRA_CAMERA_CID_SHUTTER_MODE:
++        err = ops->set_shutter_mode(tc_dev, ctrl);
++        break;
++    case TEGRA_CAMERA_CID_TG_MODE:
++        err = ops->set_timing_generator_mode(tc_dev, ctrl);
++        break;
++    case TEGRA_CAMERA_CID_EXPAND_EXPOSURE:
++        err = ops->expand_trigger_exposure(tc_dev, *ctrl->p_new.p_u32);
++        break;
++    case TEGRA_CAMERA_CID_FRAME_DELAY:
++        err = ops->delay_frame(tc_dev, *ctrl->p_new.p_u32);
++        break;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	case TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT:
++		if (switch_ctrl_qmenu[ctrl->val] == SWITCH_ON)
++			err = ops->set_master_mode(tc_dev, 1);
++		else
++			err = ops->set_master_mode(tc_dev, 0);
++		break;
++	case TEGRA_CAMERA_CID_FRAME_SYNC:
++		err = ops->set_frame_sync_mode(tc_dev, *ctrl->p_new.p_s64);
++		break;
++#endif
+ 	default:
+ 		pr_err("%s: unknown ctrl id.\n", __func__);
+ 		return -EINVAL;
+@@ -394,6 +636,14 @@ static int tegracam_set_ctrls_ex(struct tegracam_ctrl_handler *handler,
+ 		break;
+ 	case TEGRA_CAMERA_CID_HDR_EN:
+ 		break;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	case TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT:
++		err = ops->set_master_mode_ex(tc_dev, blob, *ctrl->p_new.p_s64);
++		break;
++	case TEGRA_CAMERA_CID_FRAME_SYNC:
++		err = ops->set_frame_sync_mode_ex(tc_dev, blob, *ctrl->p_new.p_s64);
++		break;
++#endif
+ 	default:
+ 		pr_err("%s: unknown ctrl id.\n", __func__);
+ 		return -EINVAL;
+@@ -479,6 +729,12 @@ int tegracam_ctrl_set_overrides(struct tegracam_ctrl_handler *hdl)
+ 				else
+ 					err = ops->set_frame_rate(tc_dev, val);
+ 				break;
++            case TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES:
++					err = ops->verify_fw_compatibility(tc_dev, &control.value);
++				break;
++			case TEGRA_CAMERA_CID_BLACK_LEVEL:
++					err = ops->set_black_level(tc_dev, val);
++				break;
+ 			default:
+ 				dev_err(dev, "%s: unsupported override %x\n",
+ 						__func__, control.id);
+@@ -543,6 +799,15 @@ int tegracam_init_ctrl_ranges_by_mode(
+ 				ctrlprops->step_exp_time.val,
+ 				ctrlprops->default_exp_time.val);
+ 			break;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++		case TEGRA_CAMERA_CID_FRAME_SYNC:
++			err = v4l2_ctrl_modify_range(ctrl,
++				ctrl->minimum,
++				ctrlprops->max_sync_modes,
++				ctrl->step,
++				ctrl->default_value);
++			break;
++#endif
+ 		case TEGRA_CAMERA_CID_EXPOSURE_SHORT:
+ 			/*
+ 			 * min_hdr_ratio should be equal to max_hdr_ratio.
+@@ -570,6 +835,21 @@ int tegracam_init_ctrl_ranges_by_mode(
+ 				max_short_exp_time,
+ 				default_short_exp_time);
+ 			break;
++        case TEGRA_CAMERA_CID_BLACK_LEVEL:
++	        err = v4l2_ctrl_modify_range(ctrl,
++                                         ctrl->minimum,
++                                         s_data->blklvl_max_range,
++                                         ctrl->step, ctrl->default_value);
++                break;
++        case TEGRA_CAMERA_CID_DIGITAL_GAIN:
++            ctrl->default_value = clamp_val(s_data->dig_gain_def_value,
++                                                     s_data->dig_gain_min_range,
++                                                     s_data->dig_gain_max_range);
++	        err = v4l2_ctrl_modify_range(ctrl,
++                                         s_data->dig_gain_min_range,
++                                         s_data->dig_gain_max_range,
++                                         ctrl->step, ctrl->default_value);
++            break;
+ 		default:
+ 			/* Not required to modify these control ranges */
+ 			break;
+@@ -685,6 +965,41 @@ static int tegracam_check_ctrl_ops(
+ 			if (ops->set_frame_rate_ex != NULL)
+ 				sensor_ex_ops++;
+ 			break;
++		case TEGRA_CAMERA_CID_STREAMING_MODE:
++			if (ops->set_streaming_mode == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_STREAMING_MODE implementation\n");
++			else
++				sensor_ops++;
++			break;
++		case TEGRA_CAMERA_CID_OPERATION_MODE:
++			if (ops->set_operation_mode == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_OPERATION_MODE implementation\n");
++			else
++				sensor_ops++;
++			break;
++		case TEGRA_CAMERA_CID_SYNC_FUNCTION:
++			if (ops->set_sync_feature == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_SYNC_FUNCTION implementation\n");
++			else
++				sensor_ops++;
++			break;
++		case TEGRA_CAMERA_CID_BROADCAST:
++			if (ops->set_broadcast_ctrl == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_BROADCAST implementation\n");
++			else
++				sensor_ops++;
++			break;
++		case TEGRA_CAMERA_CID_BLACK_LEVEL:
++			if (ops->set_black_level == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_BLACK_LEVEL implementation\n");
++			else
++				sensor_ops++;
++			break;
+ 		case TEGRA_CAMERA_CID_GROUP_HOLD:
+ 			dev_err(dev,
+ 				"TEGRA_CAMERA_CID_GROUP_HOLD contorl is enabled in framework by default, no need to add it in driver\n");
+@@ -718,10 +1033,47 @@ static int tegracam_check_ctrl_ops(
+ 			else
+ 				compound_ops++;
+ 			break;
+-
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++		case TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT:
++			if (ops->set_master_mode == NULL &&
++				ops->set_master_mode_ex == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT implementation\n");
++			if (ops->set_master_mode != NULL)
++				sensor_ops++;
++			if (ops->set_master_mode_ex != NULL)
++				sensor_ex_ops++;
++			break;
++		case TEGRA_CAMERA_CID_FRAME_SYNC:
++			if (ops->set_frame_sync_mode == NULL &&
++				ops->set_frame_sync_mode_ex == NULL)
++				dev_err(dev,
++					"Missing TEGRA_CAMERA_CID_FRAME_SYNC implementation\n");
++			if (ops->set_frame_sync_mode != NULL)
++				sensor_ops++;
++			if (ops->set_frame_sync_mode_ex != NULL)
++				sensor_ex_ops++;
++			break;
++#endif
+ 		/* The below controls are handled by framework */
+ 		case TEGRA_CAMERA_CID_SENSOR_MODE_ID:
+ 		case TEGRA_CAMERA_CID_HDR_EN:
++		case TEGRA_CAMERA_CID_DATA_RATE:
++		case TEGRA_CAMERA_CID_TEST_PATTERN:
++		case TEGRA_CAMERA_CID_HDR_CONTROL:
++		case TEGRA_CAMERA_CID_HDR_LIN_KNEE1:
++		case TEGRA_CAMERA_CID_HDR_LIN_KNEE2:
++		case TEGRA_CAMERA_CID_XVS_XHS_STATE:
++		case TEGRA_CAMERA_CID_PWL_LUT_CONTROL:
++		case TEGRA_CAMERA_CID_DIGITAL_GAIN_SHORT:
++		case TEGRA_CAMERA_CID_BLACK_LEVEL_SHORT:
++		case TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES:
++		case TEGRA_CAMERA_CID_DIGITAL_GAIN:
++		case TEGRA_CAMERA_CID_FLIP_MIRROR:
++		case TEGRA_CAMERA_CID_SHUTTER_MODE:
++		case TEGRA_CAMERA_CID_TG_MODE:
++		case TEGRA_CAMERA_CID_EXPAND_EXPOSURE:
++		case TEGRA_CAMERA_CID_FRAME_DELAY:
+ 			mode_ops++;
+ 			break;
+ 		default:
+diff --git a/nvidia/drivers/media/platform/tegra/camera/tegracam_v4l2.c b/nvidia/drivers/media/platform/tegra/camera/tegracam_v4l2.c
+index 67230b249ea5..a66222118023 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/tegracam_v4l2.c
++++ b/nvidia/drivers/media/platform/tegra/camera/tegracam_v4l2.c
+@@ -97,6 +97,44 @@ static int v4l2sd_stream(struct v4l2_subdev *sd, int enable)
+ 	return err;
+ }
+ 
++#if defined(CONFIG_VIDEO_ECAM_ISP)
++static int tegracam_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
++{
++	struct i2c_client *client = v4l2_get_subdevdata(sd);
++	struct camera_common_data *s_data = to_camera_common_data(&client->dev);
++
++	param->parm.capture.capability |= V4L2_CAP_TIMEPERFRAME;
++	param->parm.capture.timeperframe.denominator =  s_data->frmfmt[s_data->mode].framerates[0];
++	param->parm.capture.timeperframe.numerator = 1;
++
++	return 0;
++}
++
++static int tegracam_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
++{
++	struct i2c_client *client = v4l2_get_subdevdata(sd);
++	struct camera_common_data *s_data = to_camera_common_data(&client->dev);
++	int ret;
++
++	for (ret = 0; ret < s_data->frmfmt[s_data->mode].num_framerates; ret++) {
++		if ((s_data->frmfmt[s_data->mode].framerates[ret] ==
++					param->parm.capture.timeperframe.denominator)) {
++			param->parm.capture.capability |= V4L2_CAP_TIMEPERFRAME;
++			param->parm.capture.timeperframe.denominator =
++				s_data->frmfmt[s_data->mode].framerates[ret];
++			param->parm.capture.timeperframe.numerator = 1;
++			return 0;
++		}
++	}
++	param->parm.capture.capability |= V4L2_CAP_TIMEPERFRAME;
++	param->parm.capture.timeperframe.denominator =
++		s_data->frmfmt[s_data->mode].framerates[0];
++	param->parm.capture.timeperframe.numerator = 1;
++	return 0;
++}
++#endif
++
++
+ static int v4l2sd_g_input_status(struct v4l2_subdev *sd, u32 *status)
+ {
+ 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+@@ -111,6 +149,10 @@ static struct v4l2_subdev_video_ops v4l2sd_video_ops = {
+ 	.s_stream	= v4l2sd_stream,
+ 	.g_mbus_config	= camera_common_g_mbus_config,
+ 	.g_input_status = v4l2sd_g_input_status,
++#if defined(CONFIG_VIDEO_ECAM_ISP)
++	.g_parm 	= tegracam_g_parm,
++	.s_parm		= tegracam_s_parm,
++#endif
+ };
+ 
+ static struct v4l2_subdev_core_ops v4l2sd_core_ops = {
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/capture.c b/nvidia/drivers/media/platform/tegra/camera/vi/capture.c
+index 9b8f324d4400..e11ded28886a 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/capture.c
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/capture.c
+@@ -374,7 +374,7 @@ int vi_capture_setup(struct tegra_vi_channel *chan,
+ 	struct CAPTURE_CONTROL_MSG *resp_msg = &capture->control_resp_msg;
+ 	struct capture_channel_config *config =
+ 		&control_desc.channel_setup_req.channel_config;
+-	int err = 0;
++	int err = 0, retry = 5;
+ #ifdef HAVE_VI_GOS_TABLES
+ 	int i;
+ #endif
+@@ -486,10 +486,25 @@ int vi_capture_setup(struct tegra_vi_channel *chan,
+ 	config->embdata_sp = capture->embdata_sp;
+ 	config->linetimer_sp = capture->linetimer_sp;
+ 
+-	err = vi_capture_ivc_send_control(chan, &control_desc,
++	/*err = vi_capture_ivc_send_control(chan, &control_desc,
+ 			sizeof(control_desc), CAPTURE_CHANNEL_SETUP_RESP);
+ 	if (err < 0)
+-		goto submit_fail;
++		goto submit_fail;*/
++	/*Kernel Crash patch when first frame itself Not received */
++    while(retry-- > 0) {
++        err = vi_capture_ivc_send_control(chan, &control_desc,
++                sizeof(control_desc), CAPTURE_CHANNEL_SETUP_RESP);
++        dev_info(chan->dev,"Attempting retry %d\n", retry);
++        if (err < 0) {
++            if(retry > 0) {
++                printk("Func %s Attempting retry %d\n",__func__, retry);
++                msleep(100);
++                continue;
++            }
++            goto submit_fail;
++        }
++        break;
++    }
+ 
+ 	if (resp_msg->channel_setup_resp.result != CAPTURE_OK) {
+ 		dev_err(chan->dev, "%s: control failed, errno %d", __func__,
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/vi2_fops.c b/nvidia/drivers/media/platform/tegra/camera/vi/vi2_fops.c
+index 09d84b59eada..582b67e7b1e2 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/vi2_fops.c
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/vi2_fops.c
+@@ -1,7 +1,7 @@
+ /*
+  * Tegra Video Input 2 device common APIs
+  *
+- * Copyright (c) 2016-2022, NVIDIA CORPORATION.  All rights reserved.
++ * Copyright (c) 2016-2019, NVIDIA CORPORATION.  All rights reserved.
+  *
+  * Author: Bryan Wu <pengw@nvidia.com>
+  *
+@@ -226,7 +226,7 @@ static void tegra_channel_ec_init(struct tegra_channel *chan)
+ 	 * Time limit allow CSI to capture good frames and drop error frames
+ 	 * TODO: Get frame rate from sub-device and adopt timeout
+ 	 */
+-	chan->timeout = msecs_to_jiffies(200);
++	chan->timeout = msecs_to_jiffies(2500);
+ 
+ 	/*
+ 	 * Sync point FIFO full blocks host interface
+@@ -480,14 +480,18 @@ static int tegra_channel_capture_frame_multi_thread(
+ {
+ 	struct timespec ts = {0, 0};
+ 	int err = 0;
+-	u32 val, mw_ack_done;
++	u32 val, frame_start, mw_ack_done;
+ 	int bytes_per_line = chan->format.bytesperline;
+ 	int index = 0;
++	u32 thresh[TEGRA_CSI_BLOCKS] = { 0 };
+ 	u32 release_thresh[TEGRA_CSI_BLOCKS] = { 0 };
+ 	int valid_ports = chan->valid_ports;
+ 	int restart_version = 0;
+ 	bool is_streaming = atomic_read(&chan->is_streaming);
+ 
++	if (!is_streaming)
++		tegra_channel_ec_recover(chan);
++
+ 	/* The fifo depth of PP_FRAME_START and MW_ACK_DONE is 2 */
+ 	down_read(&chan->reset_lock);
+ 	/* The fifo depth of syncpt event PP_FRAME_START and MW_ACK_DONE is 2 */
+@@ -531,6 +535,15 @@ static int tegra_channel_capture_frame_multi_thread(
+ 		}
+ 
+ 		/* Program syncpoints */
++		thresh[index] = nvhost_syncpt_incr_max_ext(chan->vi->ndev,
++					chan->syncpt[index][0], 1);
++
++		frame_start = VI_CSI_PP_FRAME_START(chan->port[index]);
++		val = VI_CFG_VI_INCR_SYNCPT_COND(frame_start) |
++			chan->syncpt[index][0];
++		tegra_channel_write(chan,
++			TEGRA_VI_CFG_VI_INCR_SYNCPT, val);
++
+ 		release_thresh[index] =
+ 			nvhost_syncpt_incr_max_ext(chan->vi->ndev,
+ 					chan->syncpt[index][1], 1);
+@@ -551,8 +564,10 @@ static int tegra_channel_capture_frame_multi_thread(
+ 			dev_err(&chan->video->dev,
+ 				"failed to enable stream. ERROR: %d\n", err);
+ 
++			buf->state = VB2_BUF_STATE_REQUEUEING;
+ 			chan->capture_state = CAPTURE_ERROR;
+-			goto capture_fail;
++			release_buffer(chan, buf);
++			return err;
+ 		}
+ 		/* Bit controls VI memory write, enable after all regs */
+ 		for (index = 0; index < valid_ports; index++) {
+@@ -569,23 +584,52 @@ static int tegra_channel_capture_frame_multi_thread(
+ 	for (index = 0; index < valid_ports; index++)
+ 		csi_write(chan, index,
+ 			TEGRA_VI_CSI_SINGLE_SHOT, SINGLE_SHOT_CAPTURE);
+-
+ 	up_read(&chan->reset_lock);
+ 
+ 	chan->capture_state = CAPTURE_GOOD;
++	for (index = 0; index < valid_ports; index++) {
++		err = nvhost_syncpt_wait_timeout_ext(chan->vi->ndev,
++			chan->syncpt[index][0], thresh[index],
++			chan->timeout, NULL, &ts);
++		if (err) {
++			dev_err(&chan->video->dev,
++				"frame start syncpt timeout!%d\n", index);
++			buf->state = VB2_BUF_STATE_REQUEUEING;
++			/* perform error recovery for timeout */
++			tegra_channel_ec_recover(chan);
++			chan->capture_state = CAPTURE_TIMEOUT;
++			break;
++		}
++
++		dev_dbg(&chan->video->dev,
++			"%s: vi2 got SOF syncpt buf[%p]\n", __func__, buf);
++	}
++
+ 	getrawmonotonic(&ts);
++
++	if (!err && !chan->pg_mode) {
++		/* Marking error frames and resume capture */
++		/* TODO: TPG has frame height short error always set */
++		err = tegra_channel_error_status(chan);
++		if (err) {
++			buf->state = VB2_BUF_STATE_REQUEUEING;
++			chan->capture_state = CAPTURE_ERROR;
++			tegra_channel_ec_recover(chan);
++		}
++	}
++
+ 	set_timestamp(buf, &ts);
+ 
+-	/* Set buffer version to match current capture version */
+-	buf->version = chan->capture_version;
+-	enqueue_inflight(chan, buf);
+-	return 0;
++	if (chan->capture_state == CAPTURE_GOOD) {
++		/* Set buffer version to match current capture version */
++		buf->version = chan->capture_version;
++		enqueue_inflight(chan, buf);
++	} else {
++		buf->state = VB2_BUF_STATE_REQUEUEING;
++		release_buffer(chan, buf);
++	}
+ 
+-capture_fail:
+-	buf->state = VB2_BUF_STATE_REQUEUEING;
+-	release_buffer(chan, buf);
+-	atomic_dec(&chan->syncpt_depth);
+-	return err;
++	return 0;
+ }
+ 
+ static int tegra_channel_capture_frame(struct tegra_channel *chan,
+@@ -814,6 +858,8 @@ static int tegra_channel_kthread_capture_start(void *data)
+ 
+ static void tegra_channel_stop_kthreads(struct tegra_channel *chan)
+ {
++	struct tegra_channel_buffer *buf = NULL;
++
+ 	mutex_lock(&chan->stop_kthread_lock);
+ 	/* Stop the kthread for capture */
+ 	if (chan->kthread_capture_start) {
+@@ -824,6 +870,11 @@ static void tegra_channel_stop_kthreads(struct tegra_channel *chan)
+ 	if (chan->low_latency) {
+ 		/* Stop the kthread for release frame */
+ 		if (chan->kthread_release) {
++			if (!list_empty(&chan->release)) {
++				buf = dequeue_inflight(chan);
++				if (buf)
++					tegra_channel_release_frame(chan, buf);
++			}
+ 			kthread_stop(chan->kthread_release);
+ 			chan->kthread_release = NULL;
+ 		}
+@@ -843,6 +894,8 @@ static int vi2_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 	struct tegra_csi_channel *csi_chan = NULL;
+ 	struct tegra_csi_device *csi = chan->vi->csi;
+ 
++	vi_channel_syncpt_init(chan);
++
+ 	tegra_channel_ec_init(chan);
+ 
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+@@ -874,10 +927,6 @@ static int vi2_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 		/* ensure sync point state is clean */
+ 		nvhost_syncpt_set_min_eq_max_ext(chan->vi->ndev,
+ 							chan->syncpt[i][0]);
+-		if (chan->low_latency) {
+-			nvhost_syncpt_set_min_eq_max_ext(chan->vi->ndev,
+-						chan->syncpt[i][1]);
+-		}
+ 	}
+ 
+ 	/* Note: Program VI registers after TPG, sensors and CSI streaming */
+@@ -889,9 +938,6 @@ static int vi2_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 	if (!chan->low_latency)
+ 		tegra_channel_init_ring_buffer(chan);
+ 
+-	/* reset syncpt depth to 0 */
+-	atomic_set(&chan->syncpt_depth, 0);
+-
+ 	/* Start kthread to capture data to buffer */
+ 	chan->kthread_capture_start = kthread_run(
+ 					tegra_channel_kthread_capture_start,
+@@ -932,6 +978,7 @@ static int vi2_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 	vq->start_streaming_called = 0;
+ 	tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_QUEUED,
+ 		chan->low_latency);
++
+ 	return ret;
+ }
+ 
+@@ -947,7 +994,7 @@ static int vi2_channel_stop_streaming(struct vb2_queue *vq)
+ 	if (!chan->bypass) {
+ 		tegra_channel_stop_kthreads(chan);
+ 		/* wait for last frame memory write ack */
+-		if (!chan->low_latency && is_streaming && chan->capture_state == CAPTURE_GOOD)
++		if (is_streaming && chan->capture_state == CAPTURE_GOOD)
+ 			tegra_channel_capture_done(chan);
+ 		if (!chan->low_latency) {
+ 			/* free all the ring buffers */
+@@ -981,6 +1028,8 @@ static int vi2_channel_stop_streaming(struct vb2_queue *vq)
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+ 	media_entity_pipeline_stop(&chan->video->entity);
+ #endif
++
++	vi_channel_syncpt_free(chan);
+ 	return 0;
+ }
+ 
+@@ -1052,7 +1101,6 @@ static int vi2_power_on(struct tegra_channel *chan)
+ 	if (ret)
+ 		return ret;
+ 
+-	vi_channel_syncpt_init(chan);
+ 	if (atomic_add_return(1, &vi->power_on_refcnt) == 1) {
+ 		tegra_vi2_power_on(vi);
+ 		if (chan->pg_mode)
+@@ -1092,7 +1140,6 @@ static void vi2_power_off(struct tegra_channel *chan)
+ 		else
+ 			tegra_vi->sensor_opened = false;
+ 	}
+-	vi_channel_syncpt_free(chan);
+ 	nvhost_module_remove_client(vi->ndev, &chan->video);
+ }
+ 
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/vi4_fops.c b/nvidia/drivers/media/platform/tegra/camera/vi/vi4_fops.c
+index 7b19eb1d3e40..0db38953b02b 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/vi4_fops.c
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/vi4_fops.c
+@@ -33,10 +33,19 @@
+ #define BOTTOM_FIELD 1
+ #define SOF_SYNCPT_IDX	0
+ #define FE_SYNCPT_IDX	1
++
++#ifdef CONFIG_VIDEO_ECAM
++/* byte alignment is changed to 64 because of,default RM_SURFACE_ALIGNMENT
++ * is causing streaming problem in some supported resolutions which have
++ * stride length not divisible by 256
++ */
++#define RM_SURFACE_ALIGNMENT 64
++#else
+ /* 256 byte alignment in accordance to NvRmSurface Pitch alignment.
+  * It is the worst case scenario considering VIC engine requirements
+  */
+ #define RM_SURFACE_ALIGNMENT 256
++#endif
+ 
+ static void tegra_channel_error_recovery(struct tegra_channel *chan);
+ static void tegra_channel_stop_kthreads(struct tegra_channel *chan);
+@@ -1086,7 +1095,12 @@ static int vi4_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 	}
+ 
+ 	chan->sequence = 0;
+-	chan->timeout = msecs_to_jiffies(200);
++	#ifdef CONFIG_VIDEO_ECAM
++		/* econ camera module supported with upto 1 Second exposure time variation */ 
++		chan->timeout = msecs_to_jiffies(2500);
++	#else
++		chan->timeout = msecs_to_jiffies(2500);
++	#endif	
+ 	if (!chan->low_latency)
+ 		tegra_channel_init_ring_buffer(chan);
+ 
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/vi4_formats.h b/nvidia/drivers/media/platform/tegra/camera/vi/vi4_formats.h
+index de33c42fbf79..e9b3fa3c30bd 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/vi4_formats.h
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/vi4_formats.h
+@@ -133,8 +133,14 @@ static const struct tegra_video_format vi4_video_formats[] = {
+ 				YUV422_8, YVYU, "YUV 4:2:2"),
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, UYVY8_1X16, 1, 1, T_Y8__V8U8_N422,
+ 				YUV422_8, NV16, "NV16"),
++#ifndef CONFIG_VIDEO_ECAM
++	/*
++	 * Fixed v4l2-compliance test issue
++	 * Duplicate UYVY Format enumeration for the same device 
++	 */				
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, UYVY8_2X8, 2, 1, T_U8_Y8__V8_Y8,
+ 				YUV422_8, UYVY, "YUV 4:2:2 UYVY"),
++#endif
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, VYUY8_2X8, 2, 1, T_V8_Y8__U8_Y8,
+ 				YUV422_8, VYUY, "YUV 4:2:2 VYUY"),
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, YUYV8_2X8, 2, 1, T_Y8_U8__Y8_V8,
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/vi5_fops.c b/nvidia/drivers/media/platform/tegra/camera/vi/vi5_fops.c
+index 71a9b48de059..b88a3802d168 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/vi5_fops.c
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/vi5_fops.c
+@@ -211,6 +211,13 @@ static int vi5_add_ctrls(struct tegra_channel *chan)
+ 
+ 	/* Add vi5 custom controls */
+ 	for (i = 0; i < ARRAY_SIZE(vi5_custom_ctrls); i++) {
++		#ifdef CONFIG_VIDEO_ECAM
++                 /* Skipped below 3 controls for econ camera module */
++                if (vi5_custom_ctrls[i].id == TEGRA_CAMERA_CID_SENSOR_CONFIG ||
++                                vi5_custom_ctrls[i].id == TEGRA_CAMERA_CID_SENSOR_MODE_BLOB ||
++                                vi5_custom_ctrls[i].id == TEGRA_CAMERA_CID_SENSOR_CONTROL_BLOB )
++                                continue;
++                #endif
+ 		v4l2_ctrl_new_custom(&chan->ctrl_handler,
+ 			&vi5_custom_ctrls[i], NULL);
+ 		if (chan->ctrl_handler.error) {
+@@ -428,8 +435,18 @@ static void vi5_capture_dequeue(struct tegra_channel *chan,
+ 					"err_data %d\n",
+ 					descr->status.frame_id, descr->status.flags,
+ 					descr->status.err_data);
+-				buf->vb2_state = VB2_BUF_STATE_REQUEUEING;
+-				goto done;
++				 #ifdef  CONFIG_VIDEO_ECAM
++                                /* Fix for continuous vi: corr_err: discarding frame error NVBUG ID: 2595468 */
++                                if(descr->status.status == CAPTURE_STATUS_CSIMUX_FRAME) {
++                                        goto uncorr_err;
++                                } else {
++                                        buf->vb2_state = VB2_BUF_STATE_REQUEUEING;
++                                        goto done;
++                                }
++                        #else
++                                buf->vb2_state = VB2_BUF_STATE_REQUEUEING;
++                                goto done;
++                        #endif
+ 			}
+ 		} else if (!vi_port) {
+ 			gang_prev_frame_id = descr->status.frame_id;
+@@ -622,7 +639,12 @@ static int tegra_channel_kthread_capture_dequeue(void *data)
+ 			if (err) {
+ 				dev_err(chan->vi->dev,
+ 					"fatal: error recovery failed\n");
+-				break;
++				#ifndef CONFIG_VIDEO_ECAM
++                                /* Workaround for fatal error which causes kernel crash - NVBUG ID: 2854501
++ */
++                                        break;
++                                #endif
++
+ 			}
+ 		} else
+ 			spin_unlock_irqrestore(&chan->capture_state_lock,
+@@ -800,6 +822,11 @@ static int vi5_channel_start_streaming(struct vb2_queue *vq, u32 count)
+ 			goto err_start_kthreads;
+ 	}
+ 
++	#ifdef CONFIG_VIDEO_ECAM
++        /* csi stream/sensor(s) devices to be closed before vi channel */
++        tegra_channel_set_stream(chan, false);
++	#endif
++
+ 	/* csi stream/sensor devices should be streamon post vi channel setup */
+ 	ret = tegra_channel_set_stream(chan, true);
+ 	if (ret < 0)
+@@ -841,13 +868,19 @@ static int vi5_channel_stop_streaming(struct vb2_queue *vq)
+ 	struct tegra_channel *chan = vb2_get_drv_priv(vq);
+ 	long err;
+ 	int vi_port = 0;
+-	if (!chan->bypass)
++#ifdef CONFIG_VIDEO_ECAM
++        if (!chan->bypass) {
++#else
++        if (!chan->bypass)
++#endif
+ 		vi5_channel_stop_kthreads(chan);
+ 
+-	/* csi stream/sensor(s) devices to be closed before vi channel */
+-	tegra_channel_set_stream(chan, false);
++#ifndef CONFIG_VIDEO_ECAM
++        /* csi stream/sensor(s) devices to be closed before vi channel */
++        tegra_channel_set_stream(chan, false);
+ 
+-	if (!chan->bypass) {
++        if (!chan->bypass) {
++#endif
+ 		for (vi_port = 0; vi_port < chan->valid_ports; vi_port++) {
+ 			err = vi_capture_release(chan->tegra_vi_channel[vi_port],
+ 				CAPTURE_CHANNEL_RESET_FLAG_IMMEDIATE);
+@@ -862,6 +895,10 @@ static int vi5_channel_stop_streaming(struct vb2_queue *vq)
+ 		/* release all remaining buffers to v4l2 */
+ 		tegra_channel_queued_buf_done(chan, VB2_BUF_STATE_ERROR, false);
+ 	}
++#ifdef CONFIG_VIDEO_ECAM
++        /* csi stream/sensor(s) devices to be closed before vi channel */
++        tegra_channel_set_stream(chan, false);
++#endif
+ 
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+ 	media_entity_pipeline_stop(&chan->video->entity);
+diff --git a/nvidia/drivers/media/platform/tegra/camera/vi/vi5_formats.h b/nvidia/drivers/media/platform/tegra/camera/vi/vi5_formats.h
+index 51cbbad5ba25..07254b1345c6 100644
+--- a/nvidia/drivers/media/platform/tegra/camera/vi/vi5_formats.h
++++ b/nvidia/drivers/media/platform/tegra/camera/vi/vi5_formats.h
+@@ -133,8 +133,14 @@ static const struct tegra_video_format vi5_video_formats[] = {
+ 				YUV422_8, YVYU, "YUV 4:2:2"),
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, UYVY8_1X16, 1, 1, T_Y8__V8U8_N422,
+ 				YUV422_8, NV16, "NV16"),
+-	TEGRA_VIDEO_FORMAT(YUV422, 16, UYVY8_2X8, 2, 1, T_U8_Y8__V8_Y8,
+-				YUV422_8, UYVY, "YUV 4:2:2 UYVY"),
++	#ifndef CONFIG_VIDEO_ECAM
++        /*
++         * Fixed v4l2-compliance test issue
++         * Duplicate UYVY Format enumeration for the same device 
++         */	
++    TEGRA_VIDEO_FORMAT(YUV422, 16, UYVY8_2X8, 2, 1, T_U8_Y8__V8_Y8,
++   			YUV422_8, UYVY, "YUV 4:2:2 UYVY"),
++	#endif
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, VYUY8_2X8, 2, 1, T_V8_Y8__U8_Y8,
+ 				YUV422_8, VYUY, "YUV 4:2:2 VYUY"),
+ 	TEGRA_VIDEO_FORMAT(YUV422, 16, YUYV8_2X8, 2, 1, T_Y8_U8__Y8_V8,
+diff --git a/nvidia/drivers/net/ethernet/nvidia/pcie/tegra_vnet.c b/nvidia/drivers/net/ethernet/nvidia/pcie/tegra_vnet.c
+index 6ab68f0dbe57..0e56a43e1cba 100644
+--- a/nvidia/drivers/net/ethernet/nvidia/pcie/tegra_vnet.c
++++ b/nvidia/drivers/net/ethernet/nvidia/pcie/tegra_vnet.c
+@@ -606,6 +606,7 @@ static void tvnet_host_process_ctrl_msg(struct tvnet_priv *tvnet)
+ {
+ 	struct ctrl_msg msg;
+ 
++	memset(&msg, 0, sizeof(msg));
+ 	while (tvnet_ivc_rd_available(&tvnet->ep2h_ctrl)) {
+ 		tvnet_host_read_ctrl_msg(tvnet, &msg);
+ 		if (msg.msg_id == CTRL_MSG_LINK_UP)
+diff --git a/nvidia/drivers/pci/endpoint/functions/pci-epf-tegra-vnet.c b/nvidia/drivers/pci/endpoint/functions/pci-epf-tegra-vnet.c
+index 4b0b98a806e4..02b6aac95ae7 100644
+--- a/nvidia/drivers/pci/endpoint/functions/pci-epf-tegra-vnet.c
++++ b/nvidia/drivers/pci/endpoint/functions/pci-epf-tegra-vnet.c
+@@ -661,6 +661,7 @@ static void tvnet_ep_process_ctrl_msg(struct pci_epf_tvnet *tvnet)
+ {
+ 	struct ctrl_msg msg;
+ 
++	memset(&msg, 0, sizeof(msg));
+ 	while (tvnet_ivc_rd_available(&tvnet->h2ep_ctrl)) {
+ 		tvnet_ep_read_ctrl_msg(tvnet, &msg);
+ 		if (msg.msg_id == CTRL_MSG_LINK_UP)
+diff --git a/nvidia/include/media/camera_common.h b/nvidia/include/media/camera_common.h
+index 22a41bc42c3f..358535b0a6a1 100644
+--- a/nvidia/include/media/camera_common.h
++++ b/nvidia/include/media/camera_common.h
+@@ -64,6 +64,7 @@ struct camera_common_power_rail {
+ 	struct regulator *iovdd;
+ 	struct regulator *vcmvdd;
+ 	struct clk *mclk;
++	unsigned int fw_reset_gpio;
+ 	unsigned int pwdn_gpio;
+ 	unsigned int reset_gpio;
+ 	unsigned int af_gpio;
+@@ -82,6 +83,7 @@ struct camera_common_pdata {
+ 	const char *parentclk_name; /* NULL for no parent clock*/
+ 	unsigned int pwdn_gpio;
+ 	unsigned int reset_gpio;
++	unsigned int creset_b;
+ 	unsigned int af_gpio;
+ 	bool ext_reg;
+ 	int (*power_on)(struct camera_common_power_rail *pw);
+@@ -89,6 +91,7 @@ struct camera_common_pdata {
+ 	struct camera_common_regulators regulators;
+ 	bool use_cam_gpio;
+ 	bool has_eeprom;
++	bool has_color_filter;
+ 	bool v_flip;
+ 	bool h_mirror;
+ 	unsigned int fuse_id_addr;
+@@ -179,6 +182,8 @@ struct camera_common_sensor_ops {
+ 	int (*set_mode)(struct tegracam_device *tc_dev);
+ 	int (*start_streaming)(struct tegracam_device *tc_dev);
+ 	int (*stop_streaming)(struct tegracam_device *tc_dev);
++	int (*check_unsupported_mode)(struct camera_common_data *s_data, struct v4l2_mbus_framefmt *mf);
++	int (*after_set_pixel_format)(struct camera_common_data *s_data);
+ };
+ 
+ struct tegracam_sensor_data {
+@@ -193,12 +198,29 @@ struct tegracam_ctrl_ops {
+ 	const u32 *ctrl_cid_list;
+ 	bool is_blob_supported;
+ 	int (*set_gain)(struct tegracam_device *tc_dev, s64 val);
++	int (*set_digital_gain)(struct tegracam_device *tc_dev, s64 val);
+ 	int (*set_exposure)(struct tegracam_device *tc_dev, s64 val);
+ 	int (*set_exposure_short)(struct tegracam_device *tc_dev, s64 val);
+ 	int (*set_frame_rate)(struct tegracam_device *tc_dev, s64 val);
+ 	int (*set_group_hold)(struct tegracam_device *tc_dev, bool val);
+ 	int (*fill_string_ctrl)(struct tegracam_device *tc_dev,
+ 				struct v4l2_ctrl *ctrl);
++	int (*set_test_pattern)(struct tegracam_device *tc_dev, u32 val);
++ 	int (*set_streaming_mode)(struct tegracam_device *tc_dev, u32 val);
++    	int (*set_operation_mode)(struct tegracam_device *tc_dev, u32 val);
++    	int (*set_sync_feature)(struct tegracam_device *tc_dev, u32 val);
++    	int (*set_broadcast_ctrl)(struct tegracam_device *tc_dev,
++                                struct v4l2_ctrl *ctrl);
++    	int (*verify_fw_compatibility)(struct tegracam_device *tc_dev,
++                                    s32 *val);
++    	int (*set_shutter_mode)(struct tegracam_device *tc_dev,
++                                    struct v4l2_ctrl *ctrl);
++    	int (*set_timing_generator_mode)(struct tegracam_device *tc_dev,
++                                        struct v4l2_ctrl *ctrl);
++    	int (*set_orientation)(struct tegracam_device *tc_dev, u32 val);
++    	int (*expand_trigger_exposure)(struct tegracam_device *tc_dev, u32 val);
++    	int (*delay_frame)(struct tegracam_device *tc_dev, u32 val);
++    	int (*set_black_level)(struct tegracam_device *tc_dev, s64 val);
+ 	int (*fill_compound_ctrl)(struct tegracam_device *tc_dev,
+ 				struct v4l2_ctrl *ctrl);
+ 	int (*set_gain_ex)(struct tegracam_device *tc_dev,
+@@ -209,6 +231,15 @@ struct tegracam_ctrl_ops {
+ 			struct sensor_blob *blob, s64 val);
+ 	int (*set_group_hold_ex)(struct tegracam_device *tc_dev,
+ 			struct sensor_blob *blob, bool val);
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++/* e-con function callback to set custom controls */
++	int (*set_master_mode)(struct tegracam_device *tc_dev,s32 val);
++	int (*set_master_mode_ex)(struct tegracam_device *tc_dev,
++			struct sensor_blob *blob, s64 val);
++	int (*set_frame_sync_mode)(struct tegracam_device *tc_dev,s64 val);
++	int (*set_frame_sync_mode_ex)(struct tegracam_device *tc_dev,
++			struct sensor_blob *blob, s64 val);
++#endif
+ };
+ 
+ struct tegracam_ctrl_handler {
+@@ -235,24 +266,39 @@ struct camera_common_data {
+ 	struct module				*owner;
+ 
+ 	struct sensor_properties		sensor_props;
++	struct crosslink_private *cl_priv;
+ 	/* TODO: cleanup neeeded once all the sensors adapt new framework */
+ 	struct tegracam_ctrl_handler		*tegracam_ctrl_hdl;
+ 	struct regmap				*regmap;
++	struct regmap *broadcast_regmap;
++	struct regmap *crosslink_regmap;
+ 	struct camera_common_pdata		*pdata;
+ 	/* TODO: cleanup needed for priv once all the sensors adapt new framework */
+ 	void	*priv;
++	s64 exposure_min_range, exposure_max_range;
++    	s64 short_exposure_min_range, short_exposure_max_range;
+ 	int	numctrls;
+ 	int	csi_port;
+ 	int	numlanes;
+ 	int	mode;
+ 	int 	mode_prop_idx;
+ 	int	numfmts;
++	int 	blklvl_max_range;
++    	int 	dig_gain_def_value;
++    	int 	dig_gain_max_range;
++    	int 	dig_gain_min_range;
+ 	int	def_mode, def_width, def_height;
+ 	int	def_clk_freq;
+ 	int	fmt_width, fmt_height;
+ 	int	sensor_mode_id;
+ 	bool	use_sensor_mode_id;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	bool	master_slave_id;
++	bool	use_master_slave_mode;
++	uint16_t master_slave_gpio;
++#endif
+ 	bool	override_enable;
++	bool 	group_hold_active;
+ 	u32	version;
+ };
+ 
+diff --git a/nvidia/include/media/tegra-v4l2-camera.h b/nvidia/include/media/tegra-v4l2-camera.h
+index 619218d70678..d738099d4073 100644
+--- a/nvidia/include/media/tegra-v4l2-camera.h
++++ b/nvidia/include/media/tegra-v4l2-camera.h
+@@ -39,6 +39,11 @@
+ #define TEGRA_CAMERA_CID_EXPOSURE_SHORT		(TEGRA_CAMERA_CID_BASE+12)
+ #define TEGRA_CAMERA_CID_STEREO_EEPROM		(TEGRA_CAMERA_CID_BASE+13)
+ 
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++#define TEGRA_CAMERA_CID_MASTER_SLAVE_SELECT	(TEGRA_CAMERA_CID_BASE+21)
++#define TEGRA_CAMERA_CID_FRAME_SYNC		(TEGRA_CAMERA_CID_BASE+22)
++#endif
++
+ #define TEGRA_CAMERA_CID_SENSOR_CONFIG		(TEGRA_CAMERA_CID_BASE+50)
+ #define TEGRA_CAMERA_CID_SENSOR_MODE_BLOB	(TEGRA_CAMERA_CID_BASE+51)
+ #define TEGRA_CAMERA_CID_SENSOR_CONTROL_BLOB	(TEGRA_CAMERA_CID_BASE+52)
+@@ -56,6 +61,34 @@
+ #define TEGRA_CAMERA_CID_LOW_LATENCY         (TEGRA_CAMERA_CID_BASE+109)
+ #define TEGRA_CAMERA_CID_VI_PREFERRED_STRIDE (TEGRA_CAMERA_CID_BASE+110)
+ 
++#define TEGRA_CAMERA_CID_DATA_RATE                  (TEGRA_CAMERA_CID_BASE+111)
++#define TEGRA_CAMERA_CID_TEST_PATTERN               (TEGRA_CAMERA_CID_BASE+112)
++#define TEGRA_CAMERA_CID_STREAMING_MODE             (TEGRA_CAMERA_CID_BASE+113)
++#define TEGRA_CAMERA_CID_OPERATION_MODE             (TEGRA_CAMERA_CID_BASE+114)
++#define TEGRA_CAMERA_CID_SYNC_FUNCTION              (TEGRA_CAMERA_CID_BASE+115)
++#define TEGRA_CAMERA_CID_BROADCAST                  (TEGRA_CAMERA_CID_BASE+116)
++#define TEGRA_CAMERA_CID_BLACK_LEVEL                (TEGRA_CAMERA_CID_BASE+117)
++#define TEGRA_CAMERA_CID_FPGA_FIRMWARE_PROPERTIES   (TEGRA_CAMERA_CID_BASE+118)
++#define TEGRA_CAMERA_CID_HDR_CONTROL                (TEGRA_CAMERA_CID_BASE+119)
++#define TEGRA_CAMERA_CID_HDR_LIN_KNEE1              (TEGRA_CAMERA_CID_BASE+120)
++#define TEGRA_CAMERA_CID_HDR_LIN_KNEE2              (TEGRA_CAMERA_CID_BASE+121)
++#define TEGRA_CAMERA_CID_DIGITAL_GAIN               (TEGRA_CAMERA_CID_BASE+122)
++#define TEGRA_CAMERA_CID_FLIP_MIRROR                (TEGRA_CAMERA_CID_BASE+123)
++#define TEGRA_CAMERA_CID_SHUTTER_MODE               (TEGRA_CAMERA_CID_BASE+124)
++#define TEGRA_CAMERA_CID_XVS_XHS_STATE              (TEGRA_CAMERA_CID_BASE+125)
++
++/* Sensor specific controls */
++#define TEGRA_CAMERA_CID_TG_MODE                    (TEGRA_CAMERA_CID_BASE+140)
++
++#define TEGRA_CAMERA_CID_PWL_LUT_CONTROL            (TEGRA_CAMERA_CID_BASE+150)
++#define TEGRA_CAMERA_CID_DIGITAL_GAIN_SHORT         (TEGRA_CAMERA_CID_BASE+151)
++#define TEGRA_CAMERA_CID_BLACK_LEVEL_SHORT          (TEGRA_CAMERA_CID_BASE+152)
++#define TEGRA_CAMERA_CID_EXPAND_EXPOSURE            (TEGRA_CAMERA_CID_BASE+153)
++#define TEGRA_CAMERA_CID_FRAME_DELAY                (TEGRA_CAMERA_CID_BASE+154)
++
++
++
++
+ /**
+  * This is temporary with the current v4l2 infrastructure
+  * currently discussing with upstream maintainers our proposals and
+@@ -136,6 +169,9 @@ struct sensor_control_properties {
+ 	__u32 gain_factor;
+ 	__u32 framerate_factor;
+ 	__u32 inherent_gain;
++#if defined(CONFIG_VIDEO_ECAM_ISP_MULTICAM)
++	__u32 max_sync_modes;
++#endif
+ 	__u32 min_gain_val;
+ 	__u32 max_gain_val;
+ 	__u32 min_hdr_ratio;
+diff --git a/nvidia/include/media/tegra_camera_core.h b/nvidia/include/media/tegra_camera_core.h
+index 788cf77dc5b1..a7aeee2adfac 100644
+--- a/nvidia/include/media/tegra_camera_core.h
++++ b/nvidia/include/media/tegra_camera_core.h
+@@ -24,6 +24,7 @@
+ #define TEGRA_WIDTH_ALIGNMENT	1
+ /* Stride alignment */
+ #define TEGRA_STRIDE_ALIGNMENT	1
++#define TEGRA_FRAMOS_STRIDE_ALIGNMENT	256
+ /* Height alignment */
+ #define TEGRA_HEIGHT_ALIGNMENT	1
+ /* Size alignment */
+diff --git a/nvidia/sound/soc/tegra-alt/machine_drivers/tegra_machine_driver_mobile.c b/nvidia/sound/soc/tegra-alt/machine_drivers/tegra_machine_driver_mobile.c
+index b2e8fa27cd62..999934c53cb4 100644
+--- a/nvidia/sound/soc/tegra-alt/machine_drivers/tegra_machine_driver_mobile.c
++++ b/nvidia/sound/soc/tegra-alt/machine_drivers/tegra_machine_driver_mobile.c
+@@ -357,6 +357,22 @@ static int tegra_machine_dai_init(struct snd_soc_pcm_runtime *runtime,
+ 			return err;
+ 		}
+ 	}
++	
++	rtd = snd_soc_get_pcm_runtime(card, "sgtl5000-codec");
++    if (rtd) {
++        dai_params =
++        (struct snd_soc_pcm_stream *)rtd->dai_link->params;
++		//printk(KERN_DEBUG "%s %d\n",__func__,__LINE__);
++		dai_params->formats = formats;  // CTI - Astro codec support
++		dai_params->rate_min = srate;
++
++        err = snd_soc_dai_set_sysclk(rtd->codec_dai, 0,
++                         aud_mclk, SND_SOC_CLOCK_IN);
++        if (err < 0) {
++            dev_err(card->dev, "codec_dai clock not set\n");
++            return err;
++        }
++    }
+ 
+ 	rtd = snd_soc_get_pcm_runtime(card, "rt565x-codec-sysclk-bclk1");
+ 	if (rtd) {
+@@ -602,6 +618,8 @@ static int codec_init(struct tegra_machine *machine)
+ 			dai_links[i].init = tegra_machine_fepi_init;
+ 		else if (strstr(dai_links[i].name, "respeaker-4-mic-array"))
+ 			dai_links[i].init = tegra_machine_respeaker_init;
++		else if (strstr(dai_links[i].name, "sgtl5000-codec"))
++			dai_links[i].init = tegra_machine_rt565x_init;
+ 	}
+ 
+ 	return 0;

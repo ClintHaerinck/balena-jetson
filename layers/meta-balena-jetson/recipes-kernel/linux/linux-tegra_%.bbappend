@@ -13,6 +13,7 @@ SRC_URI:append = " \
     file://xhci-ring-Don-t-show-incorrect-WARN-message-about.patch \
     file://0001-dont-export-rpmb-as-part.patch \
     file://0002-Update-qmi_wwan-to-kernel-4.14.patch \
+    file://0001-CTI-changes.patch \
 "
 
 SRC_URI:append:jetson-tx2 = " \
@@ -27,6 +28,7 @@ SRC_URI:append:jetson-tx2 = " \
     file://0001-mttcan_ivc-Fix-build-failure-with-kernel-4.9.patch \
     file://0001-gasket-Backport-gasket-driver-from-linux-coral.patch \
 "
+
 
 SRC_URI:append:jetson-xavier-nx-devkit-seeed-2mic-hat = " \
     file://tegra194-p3668-all-p3509-0000-seeed-2mic-hat.dtb \
@@ -127,6 +129,7 @@ BALENA_CONFIGS[uvc] = " \
                 CONFIG_USB_VIDEO_CLASS=m \
                 CONFIG_USB_VIDEO_CLASS_INPUT_EVDEV=y \
 "
+BALENA_CONFIGS:remove:photon-tx2-nx = " uvc"
 
 BALENA_CONFIGS_DEPS[uvc] = " \
                 CONFIG_MEDIA_CAMERA_SUPPORT=y \
@@ -172,6 +175,7 @@ BALENA_CONFIGS_DEPS[gamepad] = " \
 "
 
 BALENA_CONFIGS:append:jetson-tx2 = " can"
+BALENA_CONFIGS:remove:photon-tx2-nx = " can"
 BALENA_CONFIGS[can] = " \
                 CONFIG_CAN=m \
                 CONFIG_CAN_RAW=m \
@@ -239,13 +243,26 @@ BALENA_CONFIGS[mii] = " \
 
 BALENA_CONFIGS:append = " cfginput"
 BALENA_CONFIGS[cfginput] = " \
-		CONFIG_INPUT_LEDS=m \
-		CONFIG_FF_MEMLESS=m \
-		CONFIG_INPUT_MOUSEDEV=m \
-		CONFIG_INPUT_JOYDEV=m \
-		CONFIG_JOYSTICK_XPAD=m \
-		CONFIG_INPUT_KEYCHORD=m \
+                CONFIG_INPUT_LEDS=m \
+                CONFIG_FF_MEMLESS=m \
+                CONFIG_INPUT_MOUSEDEV=m \
+                CONFIG_INPUT_JOYDEV=m \
+                CONFIG_JOYSTICK_XPAD=m \
+                CONFIG_INPUT_KEYCHORD=m \
 "
+
+BALENA_CONFIGS:append:photon-tx2-nx = " ptn5150"
+BALENA_CONFIGS[ptn5150] = " \
+		CONFIG_REGULATOR_PTN5150=y \
+"
+
+BALENA_CONFIGS:append:photon-tx2-nx = " cti-other"
+BALENA_CONFIGS[cti-other] = " \
+        CONFIG_SENSORS_ADT7470=m \
+        CONFIG_LEDS_PCA9532=m \
+        CONFIG_LEDS_PCA9532_GPIO=y \
+"
+
 
 BALENA_CONFIGS:append:jetson-xavier-nx-devkit = " rtl8822ce "
 BALENA_CONFIGS[rtl8822ce] = " \
@@ -275,6 +292,7 @@ KERNEL_ROOTSPEC:jetson-nano-emmc = "\${resin_kernel_root} ro rootwait"
 KERNEL_ROOTSPEC:jetson-nano-2gb-devkit = "\${resin_kernel_root} ro rootwait"
 KERNEL_ROOTSPEC:jn30b-nano = "\${resin_kernel_root} ro rootwait"
 KERNEL_ROOTSPEC:jetson-tx2 = " \${resin_kernel_root} ro rootwait gasket.dma_bit_mask=32 pcie_aspm=off"
+KERNEL_ROOTSPEC:photon-tx2-nx = " \${resin_kernel_root} ro rootwait"
 KERNEL_ROOTSPEC:jetson-tx1 = " \${resin_kernel_root} ro rootwait"
 KERNEL_ROOTSPEC:jetson-xavier = ""
 KERNEL_ROOTSPEC:jetson-xavier-nx-devkit-emmc = ""
@@ -283,6 +301,7 @@ KERNEL_ROOTSPEC:jetson-xavier-nx-devkit-emmc = ""
 # to u-boot where it was 1. This is another cause of failure of
 # previous flasher images.  Use label to distinguish rootfs
 KERNEL_ROOTSPEC_FLASHER:jetson-tx2 = " root=LABEL=flash-rootA ro rootwait flasher gasket.dma_bit_mask=32 pcie_aspm=off"
+KERNEL_ROOTSPEC_FLASHER:photon-tx2-nx = " root=LABEL=flash-rootA ro rootwait flasher"
 KERNEL_ROOTSPEC_FLASHER:jetson-tx1 = " root=LABEL=flash-rootA ro rootwait flasher"
 KERNEL_ROOTSPEC:append="${L4TVER}"
 KERNEL_ROOTSPEC_FLASHER:append="${L4TVER}"
