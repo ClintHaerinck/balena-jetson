@@ -1,6 +1,121 @@
 Change log
 -----------
 
+# v2.98.12+rev2
+## (2022-05-10)
+
+* Allow for partitions to enumerate right after provisioning [Alexandru Costache]
+
+# v2.98.12+rev1
+## (2022-05-09)
+
+* Use SD-CARD or eMMC as boot device on Xavier cboot [Alexandru Costache]
+
+# v2.98.12
+## (2022-05-03)
+
+
+<details>
+<summary> Update layers/meta-balena to 0c96705ba26cda1062eff0b128eccb4f9388f9cc [Renovate Bot] </summary>
+
+> ## meta-balena-2.98.12
+> ### (2022-05-02)
+> 
+> * tests/hup: Test hostapp-update from current release [Kyle Harding]
+> 
+> ## meta-balena-2.98.11
+> ### (2022-04-29)
+> 
+> * tests: os: create swap test [Joseph Kogut]
+> 
+</details>
+
+# v2.98.10
+## (2022-04-29)
+
+
+<details>
+<summary> Update layers/meta-balena to 45726c6e1009bd1988071131762c483193a5ef59 [Renovate Bot] </summary>
+
+> ## meta-balena-2.98.10
+> ### (2022-04-28)
+> 
+> * tests: bump leviathan to 2.13 [rcooke-warwick]
+> 
+</details>
+
+# v2.98.9+rev1
+## (2022-04-28)
+
+
+<details>
+<summary> Update balena-yocto-scripts to fe688d2bfbb121401830ec804fa423619048a224 [Renovate Bot] </summary>
+
+> ## balena-yocto-scripts-1.19.4
+> ### (2022-04-28)
+> 
+> * balena-api.inc: fix 'fatal: unsafe repository' [Florin Sarbu]
+> 
+</details>
+
+# v2.98.9
+## (2022-04-28)
+
+
+<details>
+<summary> Update layers/meta-balena to fc45fb36cc79e5b7eab1017f4e5713773aba7ed1 [Renovate Bot] </summary>
+
+> ## meta-balena-2.98.9
+> ### (2022-04-28)
+> 
+> * tests: bump leviathan to 2.2.11 [rcooke-warwick]
+> 
+> ## meta-balena-2.98.8
+> ### (2022-04-28)
+> 
+> * tests/cloud: fix ssh test for testbot workers [rcooke-warwick]
+> 
+</details>
+
+# v2.98.7
+## (2022-04-27)
+
+
+<details>
+<summary> Update layers/meta-balena to 9431a0dcafd13d0218b875f40e7e642d042ae4aa [Renovate Bot] </summary>
+
+> ## meta-balena-2.98.7
+> ### (2022-04-27)
+> 
+> * linux-firmware: package QuZ-a0-jf-b0 separately [Michal Toman]
+> 
+</details>
+
+# v2.98.6
+## (2022-04-27)
+
+
+<details>
+<summary> Update layers/meta-balena to 798e236d25380d70e7be09d8d5dbb0349c05f413 [Renovate Bot] </summary>
+
+> ## meta-balena-2.98.6
+> ### (2022-04-26)
+> 
+> * timeinit/timesync-https: Update rtc after setting system time [Alexandru Costache]
+> 
+> ## meta-balena-2.98.5
+> ### (2022-04-26)
+> 
+> * networkmanager: Use default DHCP timeout [Zahari Petkov]
+> 
+</details>
+
+# v2.98.4+rev2
+## (2022-04-26)
+
+* linux-tegra: Update dtb files for photon-xavier-nx to 32.7.1 [Pelle van Gils]
+* linux-tegra: Update dtb files for photon-nano to 32.7.1 [Pelle van Gils]
+
 # v2.98.4+rev1
 ## (2022-04-26)
 
